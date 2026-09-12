@@ -13,7 +13,7 @@
   "hostedPath": "/scraping/mcp",
   "defaultCacheSeconds": 604800,
   "forceLiveParameter": "forceLive",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "status": "public-source",
   "packagePublished": false,
   "autoUpdate": {
@@ -22,8 +22,11 @@
     "channel": "github-releases",
     "verification": "sigstore-oidc-provenance",
     "workflow": ".github/workflows/client-release.yml",
-    "checkIntervalSeconds": 900,
-    "activation": "next-client-start",
-    "minimumBootstrapVersion": "0.12.0"
+    "checkIntervalSeconds": 300,
+    "activation": "idle-worker-swap",
+    "idleToolSeconds": 60,
+    "minimumBootstrapVersion": "0.12.0",
+    "minimumSupervisorVersion": "0.13.0",
+    "quietChecks": true
   }
 }

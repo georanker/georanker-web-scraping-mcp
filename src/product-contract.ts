@@ -1,6 +1,6 @@
 /** Public MCP product identities and input contracts. No provider configuration belongs here. */
 import type { SeoToolName } from './seo-contract.js';
-export const SERVER_VERSION = '0.12.0';
+export const SERVER_VERSION = '0.13.0';
 
 export type ProductProfile = 'combined' | 'seo' | 'scraping';
 export type JobKind = 'search' | 'page';

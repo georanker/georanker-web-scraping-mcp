@@ -4,7 +4,7 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { CLIENT_PROFILE, CLIENT_REPOSITORY, CLIENT_VERSION } from './product.js';
-import { checkForUpdate, selectRelease, startUpdateChecks, rollbackRelease, type UpdateOptions } from './updater.js';
+import { checkForUpdate, selectRelease, rollbackRelease, type UpdateOptions } from './updater.js';
 
 const args = process.argv.slice(2);
 const supported = ['--setup', '--help', '-h', '--version', '-v', '--update'];
@@ -17,24 +17,21 @@ const options: UpdateOptions = {
 
 async function runBundled(): Promise<void> {
   if (args[0] === '--update') {
-    const result = await checkForUpdate(options);
+    const result = await checkForUpdate({ ...options, force: true });
     process.stdout.write(JSON.stringify(result) + '\n');
     if (result.status === 'failed') process.exitCode = 1;
     return;
   }
+  if (args.length === 0) {
+    const { createSupervisor } = await import('./supervisor.js');
+    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+    const supervisor = await createSupervisor(options);
+    try { await supervisor.connect(new StdioServerTransport()); }
+    catch (error) { await supervisor.close(); throw error; }
+    return;
+  }
   const runtime = await import(pathToFileURL(resolve(options.bundledRoot, 'dist/src/runtime.js')).href);
   await runtime.run();
-  // A successful run has connected stdio. Nothing below retries or replaces it.
-  if (args.length === 0) {
-    try {
-      const stop = startUpdateChecks(options);
-      process.stdin.once('end', stop);
-      process.stdin.once('close', stop);
-      if (process.stdin.readableEnded || process.stdin.destroyed) stop();
-    } catch {
-      // Optional update housekeeping must never trigger fallback after stdio connects.
-    }
-  }
 }
 
 async function runRelease(root: string): Promise<void> {

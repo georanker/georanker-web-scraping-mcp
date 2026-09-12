@@ -16,9 +16,9 @@ For the host examples below, replace /ABSOLUTE/PATH/client.js with the absolute 
 
 **Automatic updates**
 
-Keep your host configured to the same dist/src/cli.js launcher. Starting with client 0.12.0, it checks for released updates from the public georanker/georanker-web-scraping-mcp repository at startup and every 15 minutes while the MCP is running. A push to main automatically runs the repository's release workflow. Only after its tests and clean-install checks pass does that workflow publish the client package with signed GitHub provenance.
+Keep your host configured to the same dist/src/cli.js launcher. Starting with client 0.13.0, it checks for released updates from the public georanker/georanker-web-scraping-mcp repository at startup and every five minutes while the MCP is running. A push to main automatically runs the repository's release workflow. Only after its tests and clean-install checks pass does that workflow publish the client package with signed GitHub provenance.
 
-The launcher verifies the package's signed provenance against the expected public repository, main-branch release workflow and commit, then checks its artifact checksum. It prepares the verified package in a separate cache and installs its locked production dependencies without lifecycle scripts. It does not download and execute an unverified branch checkout. The current session stays on its running version. A prepared update is used on the next host restart or MCP reconnect, including on later launches when GitHub is unavailable.
+The launcher verifies the package's signed provenance against the expected public repository, main-branch release workflow and commit, then checks its artifact checksum. It prepares the verified package in a separate cache and installs its locked production dependencies without lifecycle scripts. It does not download and execute an unverified branch checkout. A stable supervisor keeps the host MCP connection open and runs tools through an internal worker. A verified candidate replaces the worker when no tool calls are active and 60 seconds have passed without tool activity. This idle period concerns the MCP connection, not the whole AI host or existing provider jobs. Calls are never replayed as part of a swap. If the candidate fails, the current worker continues. The prepared version is also available on later launches when GitHub is unavailable.
 
 Updates require a supported Node.js version and npm on the MCP process's PATH, access to GitHub, the npm registry and the signature verification service, and write access to the update cache. Git and a TypeScript build are only needed for the initial source installation, not for automatic updates. The default cache is ~/.config/georanker-mcp-updates/georanker-web-scraping-mcp. Set GEORANKER_MCP_UPDATE_DIR to choose another cache root. This is separate from your existing identity and credentials, which are preserved.
 
@@ -28,9 +28,11 @@ To prepare the latest commit immediately:
 node dist/src/cli.js --update
 ```
 
-Reconnect the MCP afterward to use it. Set GEORANKER_MCP_AUTO_UPDATE=0 in the host's MCP environment to disable automatic updates. A failed release workflow, download, signature verification or setup check leaves the available client version in place; update diagnostics go to stderr, separate from the MCP protocol.
+A running 0.13.0+ supervisor applies a prepared compatible worker during the next idle period. After a cancelled or timed-out worker request, automatic worker swaps wait for a normal host reconnect because completion is uncertain. Changes to supervisor code itself take effect on a normal host restart or MCP reconnect. Set GEORANKER_MCP_AUTO_UPDATE=0 in the host's MCP environment to disable automatic updates. A failed release workflow, download, signature verification or setup check leaves the available client version in place. Automatic checks are quiet when no update is available or a check cannot complete. An applied update is reported on stderr, separate from the MCP protocol.
 
-**One-time upgrade for existing installations**
+**Migration for existing installations**
+
+Existing 0.12.0 installations prepare 0.13.0 automatically and load its supervisor on the next host restart or MCP reconnect. After that one reconnect, compatible worker updates apply inside the session during idle periods. Future changes to the supervisor itself still require a normal restart.
 
 Clients older than 0.12.0 cannot update themselves. From a clean checkout of the public repository, run this once:
 
@@ -41,7 +43,7 @@ npm run build
 node dist/src/cli.js --setup
 ```
 
-Then restart or reconnect the MCP in your host. Keep the existing launcher path and credentials. Subsequent compatible updates that pass the public main release workflow are prepared automatically, without another reinstall.
+Then restart or reconnect the MCP in your host. Keep the existing launcher path and credentials. Subsequent compatible worker updates that pass the public main release workflow are prepared and applied during idle periods, without another reinstall.
 
 **Codex**
 

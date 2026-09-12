@@ -11,7 +11,7 @@ export async function run(): Promise<void> {
   }
   if (args[0] === '--version' || args[0] === '-v') { process.stdout.write(`${SERVER_VERSION}\n`); return; }
   if (args[0] === '--help' || args[0] === '-h') {
-    process.stdout.write(`GeoRanker ${CLIENT_PROFILE} MCP ${SERVER_VERSION}\n\nLaunch with no arguments from an MCP host.\n--setup: verify automatic enrollment and tool discovery without a data request.\n--version: show version.\n--update: prepare the latest signed release for the next launch.\nUpdates check automatically; set GEORANKER_MCP_AUTO_UPDATE=0 to opt out.\nOptional GEORANKER_MCP_URL and GEORANKER_STATE_DIR.\nBoth GeoRanker products share the existing installation identity for the same service origin.\n`);
+    process.stdout.write(`GeoRanker ${CLIENT_PROFILE} MCP ${SERVER_VERSION}\n\nLaunch with no arguments from an MCP host.\n--setup: verify automatic enrollment and tool discovery without a data request.\n--version: show version.\n--update: prepare the latest signed release for an idle worker swap or next launch.\nUpdates check quietly every five minutes; workers switch after 60 idle seconds; set GEORANKER_MCP_AUTO_UPDATE=0 to opt out.\nOptional GEORANKER_MCP_URL and GEORANKER_STATE_DIR.\nBoth GeoRanker products share the existing installation identity for the same service origin.\n`);
     return;
   }
   const service = new RemoteService({ ...process.env }, CLIENT_PROFILE);

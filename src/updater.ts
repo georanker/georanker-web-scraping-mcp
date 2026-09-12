@@ -10,6 +10,7 @@ const SHA = /^[a-f0-9]{40}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
 const WORKFLOW = '.github/workflows/client-release.yml';
 const ARTIFACT = 'client-update.tgz';
+export const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const REPOSITORIES = new Map([
   ['georanker/georanker-seo-mcp', '@georanker/seo-mcp'],
   ['georanker/georanker-web-scraping-mcp', '@georanker/web-scraping-mcp'],
@@ -21,11 +22,13 @@ export interface UpdateOptions {
   env: NodeJS.ProcessEnv;
   log?: (message: string) => unknown;
   signal?: AbortSignal;
+  // Only an explicit manual check should bypass the shared per-product cooldown.
+  force?: boolean;
 }
 interface Pointer { current: string; previous?: string }
 interface Ready { repository: string; commit: string; version: string }
 export interface SignedRelease { commit: string; sha256: string }
-export type UpdateResult = { status: 'disabled' | 'busy' | 'current' | 'prepared' | 'failed'; commit?: string; version?: string };
+export type UpdateResult = { status: 'disabled' | 'busy' | 'current' | 'prepared' | 'failed' | 'deferred'; commit?: string; version?: string };
 export function updateDirectory(options: UpdateOptions): string {
   if (!REPOSITORIES.has(options.repository)) throw new Error('Unsupported update repository');
   return join(options.env.GEORANKER_MCP_UPDATE_DIR || join(homedir(), '.config', 'georanker-mcp-updates'), options.repository.split('/')[1]);
@@ -110,9 +113,26 @@ async function download(url: string, limit: number, signal?: AbortSignal): Promi
   }
   return Buffer.concat(chunks);
 }
+// The cache stores only the most recent fully verified bundle per product. Reusing
+// identical signed bytes avoids repeated Sigstore trust-root requests during polling.
+// Verification failures never enter the cache; the cache does not survive a restart.
+export function createReleaseVerifier(verify: typeof verifyReleaseBundle = verifyReleaseBundle):
+  (repository: string, bytes: Buffer) => Promise<SignedRelease> {
+  const verified = new Map<string, { digest: string; release: SignedRelease }>();
+  return async (repository, bytes) => {
+    if (!REPOSITORIES.has(repository)) throw new Error('Unsupported update repository');
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    const cached = verified.get(repository);
+    if (cached?.digest === digest) return { ...cached.release };
+    const release = await verify(repository, JSON.parse(bytes.toString('utf8')));
+    verified.set(repository, { digest, release: { ...release } });
+    return { ...release };
+  };
+}
+const verifyLatest = createReleaseVerifier();
 async function signedLatest(options: UpdateOptions): Promise<SignedRelease> {
   const bytes = await download('https://github.com/' + options.repository + '/releases/latest/download/client-update.sigstore.json', 1024 * 1024, options.signal);
-  return verifyReleaseBundle(options.repository, JSON.parse(bytes.toString('utf8')));
+  return verifyLatest(options.repository, bytes);
 }
 export async function verifyReleaseBundle(repository: string, bundle: any): Promise<SignedRelease> {
   if (!REPOSITORIES.has(repository)) throw new Error('Unsupported update repository');
@@ -221,6 +241,18 @@ export async function checkForUpdate(options: UpdateOptions, fixture?: UpdateBac
     await mkdir(join(directory, 'releases'), { recursive: true, mode: 0o700 });
     lock = await acquire(directory);
     if (!lock) return { status: 'busy' };
+    const now = Date.now();
+    if (!options.force) {
+      try {
+        const previous = JSON.parse(await readFile(join(directory, 'last-check.json'), 'utf8'));
+        if (Number.isSafeInteger(previous.checkedAt) && previous.checkedAt <= now &&
+            now - previous.checkedAt < UPDATE_CHECK_INTERVAL_MS) return { status: 'deferred' };
+      } catch {}
+    }
+    // Record attempts before network work, including failures, so reconnects and
+    // simultaneous hosts cannot multiply release-feed requests.
+    await lock.assertHeld();
+    await writeFile(join(directory, 'last-check.json'), JSON.stringify({ checkedAt: now }) + '\n', { mode: 0o600 });
     const backend: UpdateBackend = fixture || {
       latest: () => signedLatest(options),
       prepare: (release, target) => prepareSigned(options, release, target),
@@ -271,27 +303,31 @@ export async function checkForUpdate(options: UpdateOptions, fixture?: UpdateBac
     if (activeVersion && version && older(version, activeVersion)) throw new Error('A newer client was activated during this update');
     await lock.assertHeld();
     await writePointer(directory, { current: commit, ...(active?.current && active.current !== commit ? { previous: active.current } : {}) });
-    options.log?.('Verified client update ' + version + ' is ready. Reconnect your MCP host to apply it.');
+    options.log?.('Verified client update ' + version + ' is ready to apply when idle.');
     return { status: 'prepared', commit, version };
   } catch {
-    if (!options.signal?.aborted) options.log?.('Signed update unavailable or verification failed. Continuing with the installed client.');
     return { status: 'failed' };
   } finally {
     if (staging) await rm(staging, { recursive: true, force: true }).catch(() => {});
     if (lock) await lock.release().catch(() => {});
   }
 }
-export function startUpdateChecks(options: UpdateOptions): () => void {
+export function startUpdateChecks(options: UpdateOptions, onChecked?: (result: UpdateResult) => void | Promise<void>): () => void {
   if (!enabled(options)) return () => {};
   const controller = new AbortController();
   let running = false;
   const check = async () => {
     if (running || controller.signal.aborted) return;
     running = true;
-    try { await checkForUpdate({ ...options, signal: controller.signal }); } finally { running = false; }
+    try {
+      const result = await checkForUpdate({ ...options, signal: controller.signal, force: false, log: undefined });
+      if (!controller.signal.aborted) await onChecked?.(result);
+    } catch {
+      // Optional background housekeeping must not interrupt the MCP or log checks.
+    } finally { running = false; }
   };
   void check();
-  const timer = setInterval(() => { void check(); }, 15 * 60 * 1000);
+  const timer = setInterval(() => { void check(); }, UPDATE_CHECK_INTERVAL_MS);
   timer.unref();
   return () => { clearInterval(timer); controller.abort(); };
 }

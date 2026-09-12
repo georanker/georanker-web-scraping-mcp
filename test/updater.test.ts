@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { CLIENT_REPOSITORY } from '../src/product.js';
+import { CLIENT_REPOSITORY, CLIENT_VERSION } from '../src/product.js';
 import { mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
-  checkForUpdate, releaseFromStatement, rollbackRelease, selectRelease, updateDirectory, verifyArtifactDigest, verifyReleaseBundle,
+  checkForUpdate, createReleaseVerifier, startUpdateChecks, UPDATE_CHECK_INTERVAL_MS, releaseFromStatement, rollbackRelease, selectRelease, updateDirectory, verifyArtifactDigest, verifyReleaseBundle,
   type UpdateBackend, type UpdateOptions,
 } from '../src/updater.js';
 
@@ -25,7 +25,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }, repository: 
   const bundledRoot = join(root, 'installed');
   await mkdir(bundledRoot);
   const options: UpdateOptions = {
-    repository, version: '0.12.0', bundledRoot,
+    repository, version: '0.12.0', bundledRoot, force: true,
     env: { GEORANKER_MCP_UPDATE_DIR: join(root, 'updates') },
   };
   return { root, options };
@@ -38,7 +38,7 @@ function backend(options: UpdateOptions, commit = COMMIT_A, overrides: { name?: 
       await mkdir(join(target, 'dist', 'src'), { recursive: true });
       await writeFile(join(target, 'package.json'), JSON.stringify({
         name: overrides.name ?? (options.repository === SEO_REPOSITORY ? '@georanker/seo-mcp' : '@georanker/web-scraping-mcp'),
-        version: overrides.version ?? '0.12.0', type: 'module',
+        version: overrides.version ?? options.version, type: 'module',
       }));
       if (!overrides.invalidLauncher) await writeFile(join(target, 'dist', 'src', 'cli.js'), 'export async function launch() {}\n');
       if (!overrides.invalidRuntime) await writeFile(join(target, 'dist', 'src', 'runtime.js'), 'export async function main() {}\n');
@@ -294,6 +294,7 @@ test('environment overrides cannot redirect the public update feed or attach cre
 
 test('the installed entry point delegates to the prepared launcher on the next start', async t => {
   const { options } = await fixture(t, CLIENT_REPOSITORY);
+  options.version = CLIENT_VERSION;
   const work = backend(options);
   const prepare = work.prepare;
   work.prepare = async (...args) => {
@@ -313,6 +314,7 @@ test('the installed entry point delegates to the prepared launcher on the next s
 
 test('a failed prepared launcher rolls back to the previous release with diagnostics only on stderr', async t => {
   const { root, options } = await fixture(t, CLIENT_REPOSITORY);
+  options.version = CLIENT_VERSION;
   for (const [commit, script] of [
     [COMMIT_A, 'export async function launch() { process.stdout.write("previous-launcher\\n"); }'],
     [COMMIT_B, 'export async function launch() { throw new Error("Fixture startup failure"); }'],
@@ -337,6 +339,7 @@ test('a failed prepared launcher rolls back to the previous release with diagnos
 
 test('the launcher is inert on import and still starts through an npm-style bin symlink', async t => {
   const { root, options } = await fixture(t, CLIENT_REPOSITORY);
+  options.version = CLIENT_VERSION;
   const entryUrl = new URL('../src/cli.js', import.meta.url);
   const env = { PATH: process.env.PATH, ...options.env, GEORANKER_MCP_URL: 'http://127.0.0.1:1', GEORANKER_STATE_DIR: join(root, 'state') };
   const code = 'globalThis.fetch = async () => { throw new Error("Unexpected network request"); }; await import('
@@ -376,4 +379,133 @@ test('a rejected release is revalidated after cooldown without reinstalling its 
   assert.equal((await checkForUpdate(options, work)).status, 'prepared');
   assert.equal(validations, 2);
   assert.equal((await selectRelease(options)).commit, COMMIT_B);
+});
+
+
+test('automatic checks share a five-minute cooldown across clients, including failed checks', async t => {
+  const { options } = await fixture(t);
+  options.force = false;
+  const work = backend(options);
+  let requests = 0;
+  let unavailable = false;
+  work.latest = async () => {
+    requests++;
+    if (unavailable) throw new Error('Fixture unavailable');
+    return { commit: COMMIT_A, sha256: DIGEST };
+  };
+  assert.equal(UPDATE_CHECK_INTERVAL_MS, 300_000);
+  assert.equal((await checkForUpdate(options, work)).status, 'prepared');
+  const reconnected = { ...options };
+  assert.equal((await checkForUpdate(reconnected, work)).status, 'deferred');
+  assert.equal(requests, 1);
+  assert.equal((await checkForUpdate({ ...options, force: true }, work)).status, 'current');
+  assert.equal(requests, 2, 'Explicit manual checks bypass the automatic cooldown.');
+  await writeFile(join(updateDirectory(options), 'last-check.json'), JSON.stringify({ checkedAt: Date.now() - UPDATE_CHECK_INTERVAL_MS }));
+  unavailable = true;
+  assert.equal((await checkForUpdate(options, work)).status, 'failed');
+  assert.equal((await checkForUpdate(reconnected, work)).status, 'deferred');
+  assert.equal(requests, 3, 'A failed feed request is also throttled.');
+});
+
+test('invalid or future check timestamps cannot disable automatic updates', async t => {
+  const { options } = await fixture(t);
+  options.force = false;
+  const work = backend(options);
+  await checkForUpdate(options, work);
+  for (const value of ['invalid json', JSON.stringify({ checkedAt: Date.now() + 1_000_000 }), JSON.stringify({ checkedAt: 'yesterday' })]) {
+    await writeFile(join(updateDirectory(options), 'last-check.json'), value);
+    assert.equal((await checkForUpdate(options, work)).status, 'current');
+  }
+});
+
+test('routine checks and unavailable updates are silent, and only prepared updates can log', async t => {
+  const { options } = await fixture(t);
+  const messages: string[] = [];
+  options.log = message => { messages.push(message); };
+  const work = backend(options);
+  assert.equal((await checkForUpdate(options, work)).status, 'prepared');
+  assert.equal(messages.length, 1);
+  assert.match(messages[0]!, /Verified client update/);
+  messages.length = 0;
+  assert.equal((await checkForUpdate(options, work)).status, 'current');
+  work.latest = async () => { throw new Error('Fixture network unavailable'); };
+  assert.equal((await checkForUpdate(options, work)).status, 'failed');
+  assert.deepEqual(messages, []);
+});
+
+test('background polling starts immediately, repeats every five minutes, and never logs checks', { timeout: 5_000 }, async t => {
+  const { options } = await fixture(t);
+  let tick!: () => void;
+  let interval = 0;
+  let unrefs = 0;
+  let cleared = false;
+  t.mock.method(globalThis, 'setInterval', (callback: () => void, milliseconds: number) => {
+    tick = callback;
+    interval = milliseconds;
+    return { unref() { unrefs++; } } as NodeJS.Timeout;
+  });
+  t.mock.method(globalThis, 'clearInterval', () => { cleared = true; });
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    requests++;
+    throw new Error('Fixture unavailable');
+  });
+  const messages: string[] = [];
+  options.log = message => { messages.push(message); };
+  const completed: string[] = [];
+  let resolveCheck: (() => void) | undefined;
+  const nextCheck = () => new Promise<void>(resolve => { resolveCheck = resolve; });
+  let completedCheck = nextCheck();
+  const stop = startUpdateChecks(options, result => {
+    completed.push(result.status);
+    resolveCheck?.();
+  });
+  t.after(stop);
+  await completedCheck;
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(interval, 300_000);
+  assert.equal(unrefs, 1);
+  assert.equal(requests, 1);
+  assert.deepEqual(completed, ['failed']);
+  completedCheck = nextCheck();
+  tick();
+  await completedCheck;
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(requests, 1, 'A simultaneous host or early tick must respect the shared cooldown.');
+  assert.deepEqual(completed, ['failed', 'deferred']);
+  await writeFile(join(updateDirectory(options), 'last-check.json'), JSON.stringify({ checkedAt: Date.now() - UPDATE_CHECK_INTERVAL_MS }));
+  completedCheck = nextCheck();
+  tick();
+  await completedCheck;
+  assert.equal(requests, 2);
+  assert.deepEqual(messages, []);
+  stop();
+  assert.equal(cleared, true);
+  tick();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(requests, 2);
+});
+
+test('verified bundle bytes are reused only for the same product and failures never enter the cache', async () => {
+  let verifications = 0;
+  const verify = createReleaseVerifier(async (repository, bundle) => {
+    verifications++;
+    if (!bundle.valid) throw new Error('Fixture invalid signature');
+    return { commit: repository === SEO_REPOSITORY ? COMMIT_A : COMMIT_B, sha256: DIGEST };
+  });
+  const bytes = Buffer.from(JSON.stringify({ valid: true }));
+  const result = await verify(SEO_REPOSITORY, bytes);
+  result.commit = COMMIT_B;
+  assert.equal((await verify(SEO_REPOSITORY, bytes)).commit, COMMIT_A, 'Callers cannot mutate the cached verified result.');
+  assert.equal(verifications, 1);
+  assert.equal((await verify(SCRAPING_REPOSITORY, bytes)).commit, COMMIT_B);
+  assert.equal(verifications, 2, 'A different repository must verify independently.');
+  await verify(SEO_REPOSITORY, Buffer.from(JSON.stringify({ valid: true, changed: true })));
+  assert.equal(verifications, 3, 'Any changed signed bytes must be verified again.');
+  const invalid = Buffer.from(JSON.stringify({ valid: false }));
+  await assert.rejects(verify(SEO_REPOSITORY, invalid), /invalid signature/);
+  await assert.rejects(verify(SEO_REPOSITORY, invalid), /invalid signature/);
+  assert.equal(verifications, 5);
+  await assert.rejects(verify('untrusted/repository', bytes), /Unsupported update repository/);
+  assert.equal(verifications, 5);
 });

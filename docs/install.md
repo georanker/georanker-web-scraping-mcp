@@ -1,18 +1,47 @@
 **Install Web Scraping MCP by GeoRanker**
 
-The client source is public. The npm package is not published. Build once with Node.js 22+:
+The client source is available on GitHub. The npm package is not published. Build once with npm, Git and a Node.js version supported by package.json: 22.22.2+ on the 22 release line, 24.15.0+ on the 24 release line, or 26.0.0+.
 
 ```sh
-git clone https://github.com/georanker/georanker-web-scraping-mcp.git
+git clone https://github.com/georanker/georanker-web-scraping-mcp.git georanker-web-scraping-mcp
 cd georanker-web-scraping-mcp
 npm ci
 npm run build
 node dist/src/cli.js --setup
 ```
 
-The setup check verifies enrollment and the expected tools without a data query. The matching hosted profile is deployed, and authenticated product tool discovery has been verified. Set GEORANKER_MCP_URL only when using a different endpoint. An unavailable or mismatched endpoint must be fixed by the operator; do not delete installation state to retry. This connection check is separate from first-result quality and individual host/OS certification.
+The setup check verifies enrollment and the expected tools without a data query. Set GEORANKER_MCP_URL only when using a different endpoint. An unavailable or mismatched endpoint must be fixed by the operator; do not delete installation state to retry.
 
 For the host examples below, replace /ABSOLUTE/PATH/client.js with the absolute path to this checkout's dist/src/cli.js. On systems where the graphical application cannot find Node, set command to the absolute node executable path. Preserve unrelated configuration entries. Reconnect the host after changes, enable/trust the tools when requested, then run the sample prompt.
+
+**Automatic updates**
+
+Keep your host configured to the same dist/src/cli.js launcher. Starting with client 0.12.0, it checks for released updates from the public georanker/georanker-web-scraping-mcp repository at startup and every 15 minutes while the MCP is running. A push to main automatically runs the repository's release workflow. Only after its tests and clean-install checks pass does that workflow publish the client package with signed GitHub provenance.
+
+The launcher verifies the package's signed provenance against the expected public repository, main-branch release workflow and commit, then checks its artifact checksum. It prepares the verified package in a separate cache and installs its locked production dependencies without lifecycle scripts. It does not download and execute an unverified branch checkout. The current session stays on its running version. A prepared update is used on the next host restart or MCP reconnect, including on later launches when GitHub is unavailable.
+
+Updates require a supported Node.js version and npm on the MCP process's PATH, access to GitHub, the npm registry and the signature verification service, and write access to the update cache. Git and a TypeScript build are only needed for the initial source installation, not for automatic updates. The default cache is ~/.config/georanker-mcp-updates/georanker-web-scraping-mcp. Set GEORANKER_MCP_UPDATE_DIR to choose another cache root. This is separate from your existing identity and credentials, which are preserved.
+
+To prepare the latest commit immediately:
+
+```sh
+node dist/src/cli.js --update
+```
+
+Reconnect the MCP afterward to use it. Set GEORANKER_MCP_AUTO_UPDATE=0 in the host's MCP environment to disable automatic updates. A failed release workflow, download, signature verification or setup check leaves the available client version in place; update diagnostics go to stderr, separate from the MCP protocol.
+
+**One-time upgrade for existing installations**
+
+Clients older than 0.12.0 cannot update themselves. From a clean checkout of the public repository, run this once:
+
+```sh
+git pull --ff-only
+npm ci
+npm run build
+node dist/src/cli.js --setup
+```
+
+Then restart or reconnect the MCP in your host. Keep the existing launcher path and credentials. Subsequent compatible updates that pass the public main release workflow are prepared automatically, without another reinstall.
 
 **Codex**
 
@@ -96,6 +125,6 @@ Run --setup before adding the entry to avoid first-enrollment work during the ho
 
 By default, eligible completed data can be reused for up to seven days. Add “Force a live fetch” to request forceLive: true. That bypasses the MCP's completed cache; pending work can be reused and should be retrieved using get_fetch_result. It does not schedule automatic refreshes or guarantee instant completion.
 
-Future public package configuration, after publication, can replace command node /ABSOLUTE/PATH/client.js with npx -y @georanker/web-scraping-mcp@VERSION. That command is not an available registry install today. Keep release versions explicit.
+The npm package is unpublished. Use the GitHub installation and stable launcher above; npx is not an available installation method for this release.
 
 Host configuration formats above are documented compatibility routes. Local protocol fixtures do not prove each host or operating system has been exercised. Cloud-only connections require a separately tested remote authentication path; do not assume the current endpoint URL is sufficient.

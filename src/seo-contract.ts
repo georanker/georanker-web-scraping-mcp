@@ -10,11 +10,13 @@ const text = z.string().trim().min(1).max(500);
 const publicUrl = z.string().trim().max(2048).url().regex(/^https?:\/\//i);
 const forceLive = z.boolean().default(false).describe('Bypass completed-result reuse (seven days by default). Retain unresolved work instead of creating a duplicate report.');
 const reportId = z.string().regex(/^seo_[a-f0-9-]{36}$/).describe('The MCP reportId returned by the matching create tool, not a provider report ID.');
+const campaignName = z.string().trim().min(2).max(120).regex(/^[^\u0000-\u001f\u007f]+$/).optional().describe('Campaign name within your own account. Omit to use this installation’s default campaign. A name never grants access to another user’s campaign. Campaign assignment must be supported by the report provider.');
 const scheduleDays = z.number().int().min(1).max(365).optional();
 const lookup = z.object({ reportId }).strict();
 
 export const SEO_INPUT_SCHEMAS = {
   create_rank_tracking_report: z.object({
+    campaignName,
     reportName: text.default('MCP rank tracking'),
     targetDomain: text.describe('Public domain whose ranking is tracked.'),
     keywords: z.array(text).min(1).max(200),
@@ -31,6 +33,7 @@ export const SEO_INPUT_SCHEMAS = {
   update_rank_tracking_schedule: z.object({ reportId, isRecurring: z.boolean(), scheduleDays }).strict()
     .refine(value => !value.isRecurring || value.scheduleDays !== undefined, { message: 'Set scheduleDays explicitly when enabling recurring tracking.', path: ['scheduleDays'] }),
   create_onpage_report: z.object({
+    campaignName,
     url: publicUrl,
     devices: z.array(z.enum(['mobile', 'desktop'])).min(1).max(2).default(['mobile', 'desktop']),
     isRecurring: z.literal(false).default(false),
@@ -38,6 +41,7 @@ export const SEO_INPUT_SCHEMAS = {
   }).strict(),
   get_onpage_report: lookup,
   create_broken_links_report: z.object({
+    campaignName,
     url: publicUrl,
     scope: z.enum(['site', 'page', 'domain']).default('site').describe('Use site for a bounded site crawl or page for analysis of links on the supplied page. The legacy domain value is a deprecated alias for site. Path-restricted crawling is unsupported; do not substitute a different coverage without the user choosing it.'),
     maxDepth: z.number().int().min(1).max(10).default(2).describe('Maximum crawl depth; MCP limit 10.'),
@@ -47,6 +51,7 @@ export const SEO_INPUT_SCHEMAS = {
   }).strict(),
   get_broken_links_report: lookup,
   create_backlinks_report: z.object({
+    campaignName,
     target: z.string().trim().min(1).max(2048).describe('Public domain or URL to analyze.'),
     endpoint: z.enum(['summary', 'backlinks', 'referring_domains', 'anchors', 'history', 'timeseries_new_lost', 'competitors', 'domain_pages']).default('summary'),
     name: text.optional(),
@@ -54,6 +59,7 @@ export const SEO_INPUT_SCHEMAS = {
   }).strict(),
   get_backlinks_report: lookup,
   create_keyword_volume_report: z.object({
+    campaignName,
     name: text.default('MCP keyword volumes'),
     keywords: z.array(text).min(1).max(200).describe('Keywords for the volume report; MCP limit 200.'),
     location: z.string().trim().min(1).max(200).optional(),

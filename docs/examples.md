@@ -14,7 +14,7 @@ Call fetch_page with this input to request live fetching:
 
 Omit forceLive or set it to false to allow seven-day completed-cache reuse. Live fetching bypasses the MCP cache, not the provider's own processing rules. If pending, call get_fetch_result with the same jobId. Lookups never start another data job.
 
-Output is readable text or HTML, capped at 50,000 characters with truncation disclosed. Structured field extraction, browser-rendering guarantees and batch crawling are not features of this release. The hosted route and client connection are verified; successful live universal-page output remains unverified.
+Output is readable text or HTML, capped at 50,000 characters with truncation disclosed. Structured field extraction, browser-rendering guarantees and batch crawling are not features of this release. The provider can return pending work; use the returned job ID to retrieve its result.
 
 Display cached, cachedAt and generatedAt when available. A missing provider generation timestamp must not be invented. The default does not mean background refresh every seven days.
 

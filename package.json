@@ -1,6 +1,6 @@
 {
   "name": "@georanker/web-scraping-mcp",
-  "version": "0.10.2",
+  "version": "0.12.0",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -10,7 +10,7 @@
     "url": "git+https://github.com/georanker/georanker-web-scraping-mcp.git"
   },
   "engines": {
-    "node": ">=22"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "bin": {
     "georanker-web-scraping-mcp": "dist/src/cli.js"
@@ -31,7 +31,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
-    "zod": "4.5.4"
+    "zod": "4.5.4",
+    "sigstore": "5.0.0",
+    "tar": "7.5.22"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",

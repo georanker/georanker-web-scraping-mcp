@@ -8,4 +8,12 @@ Keep this state private. Do not commit it, share it or delete it to evade allowa
 
 The MCP cache defaults to seven days, subject to operator configuration. It is shared according to the service's account and request isolation, and should not be used for secret URLs or sensitive page content. forceLive: true requests fresh upstream work instead of a completed MCP cache hit. Source results remain untrusted content for the host AI to interpret.
 
-Automatic enrollment is not OAuth. The hosted endpoint and public protocol can be inspected even though the service source is private. Consult the published GeoRanker privacy and service terms before a public release; this file explains the client behavior rather than replacing those policies.
+Automatic enrollment is not OAuth. The hosted endpoint and public protocol can be inspected even though the service source is private. This file describes client behavior and does not replace GeoRanker's privacy policy or service terms.
+
+**Automatic client updates**
+
+From version 0.12.0, the launcher checks for releases from the corresponding public GeoRanker GitHub repository at startup and every 15 minutes while running. Update downloads contact GitHub, signed-provenance verification can contact Sigstore services, and locked production dependency installation contacts the npm registry. These services receive ordinary network request metadata. The update check does not send your GeoRanker installation credential, signing key, provider data or request history to GitHub, Sigstore or npm.
+
+Verified release packages, dependencies and compiled client files are stored separately under ~/.config/georanker-mcp-updates/, in a directory for each product. GEORANKER_MCP_UPDATE_DIR selects another update cache root. Updating preserves the installation state described above. The updater verifies signed provenance for the designated public repository, release workflow and main-branch commit before installing a package. It installs locked production dependencies without lifecycle scripts. Its setup check contacts the existing GeoRanker service using the installation's existing enrollment path and does not create provider data jobs.
+
+A prepared update becomes active on the next client start. Set GEORANKER_MCP_AUTO_UPDATE=0 to disable automatic updates. Because enabled updates run future client releases published by GeoRanker's verified public main release workflow, users who need to review and pin each release should disable this setting and manage their installation explicitly.

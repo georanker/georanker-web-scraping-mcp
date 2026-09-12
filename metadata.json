@@ -13,6 +13,17 @@
   "hostedPath": "/scraping/mcp",
   "defaultCacheSeconds": 604800,
   "forceLiveParameter": "forceLive",
-  "status": "public-client-source",
-  "packagePublished": false
+  "version": "0.12.0",
+  "status": "public-source",
+  "packagePublished": false,
+  "autoUpdate": {
+    "repository": "https://github.com/georanker/georanker-web-scraping-mcp",
+    "branch": "main",
+    "channel": "github-releases",
+    "verification": "sigstore-oidc-provenance",
+    "workflow": ".github/workflows/client-release.yml",
+    "checkIntervalSeconds": 900,
+    "activation": "next-client-start",
+    "minimumBootstrapVersion": "0.12.0"
+  }
 }

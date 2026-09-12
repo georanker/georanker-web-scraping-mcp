@@ -2,11 +2,13 @@
 
 Public web page content as readable text or HTML for AI agents, powered by GeoRanker.
 
-Public client source, version 0.10.2. Install from this repository; the npm package is not published. The hosted service is managed separately by GeoRanker. Setup checks the connection without submitting a data query. Availability and completion of individual reports depend on the hosted service.
+Client version 0.12.0. The client source is available on GitHub. The npm package is not published. The hosted service is managed separately by GeoRanker.
 
-**Start with one useful result**
+**Install once, receive updates automatically**
 
-Build this client with Node.js 22+, run the no-query setup check, and add it to your AI host. Follow the [installation guide](docs/install.md) for Codex, Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Cline, Continue, Gemini CLI, OpenCode and OMP.
+Build this checkout with a supported Node.js version (see package.json engines), npm and Git, run the no-query setup check, and add the stable dist/src/cli.js launcher to your AI host. Follow the [installation guide](docs/install.md) for configuration and the one-time upgrade from clients older than 0.12.0.
+
+Each push to the public main branch runs the release workflow. After tests and clean-install checks pass, it publishes a client package with signed GitHub provenance. The launcher checks for this release at startup and every 15 minutes while running, verifies its repository, workflow and commit identity and artifact checksum, then installs locked production dependencies without lifecycle scripts. Automatic updates need Node.js and npm; Git and TypeScript builds are not required after initial installation. Your current MCP session continues running. A prepared update starts when the AI host next restarts or reconnects the MCP. No reinstall or host configuration change is needed for subsequent updates. If the release workflow or update verification fails, the installed version continues working. Use --update to prepare the latest commit immediately, or set GEORANKER_MCP_AUTO_UPDATE=0 to opt out. Updates do not create provider data jobs.
 
 > Fetch this public page as readable text: https://example.com/. Show the source and whether the content is truncated.
 
@@ -17,11 +19,11 @@ Build this client with Node.js 22+, run the no-query setup check, and add it to 
 
 Completed MCP results are eligible for reuse for seven days by default. Pass forceLive: true to bypass completed cache and request fresh upstream work. Pending work can be reused safely; retrieve the returned job ID instead of creating another request. Results disclose cache metadata and provider generation time when supplied.  See [examples and limits](docs/examples.md).
 
-The client enrolls automatically and stores its own installation credentials. Both GeoRanker products share their installation/account relationship for the same service origin. No manual provider API key is required. Setup performs no data query; data calls use the configured allowance and provider credits. Public upgrade availability and limits must match the hosted service's actual state.
+The client enrolls automatically and stores its own installation credentials. Both GeoRanker products share their installation/account relationship for the same service origin. No manual provider API key is required. Setup performs no data query; data calls use the configured allowance and provider credits.
 
 Request independent tasks in parallel. The hosted service applies shared and per-installation limits and may briefly queue a call. Clients sharing an installation share its limits; the operator controls slots centrally. Keep pending job or report IDs and retrieve existing results. Cancelling a call does not guarantee that submitted work stopped. Completed-result reuse remains seven days by default.
 
-See [client privacy and data flow](docs/privacy.md). Host instructions are based on official configuration documentation; fixture tests are not live-provider or all-host certification. Package source is restricted to public-safe client transport, identity and tool contracts. The hosted service, provider adapter and administration are not included.
+See [client privacy and data flow](docs/privacy.md). Package source is restricted to client transport, identity, updates and tool contracts. The hosted service, provider adapter and administration are not included.
 
 **Development**
 
@@ -31,4 +33,4 @@ npm test
 npm run pack:check
 ```
 
-The existing UNLICENSED designation is retained; this publication does not add an open-source license. The private flag in package.json prevents accidental npm publication and does not control GitHub visibility. metadata.json describes the client and is not a submitted official-registry manifest.
+The package is UNLICENSED and marked private in package.json to prevent npm publication. GitHub source availability does not grant an open-source license. metadata.json describes the product; it is not an official MCP Registry submission.

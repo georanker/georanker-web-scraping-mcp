@@ -1,0 +1,73 @@
+name: Release MCP client update
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-release-main
+  cancel-in-progress: true
+
+jobs:
+  release:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.repository == 'georanker/georanker-seo-mcp' ||
+       github.repository == 'georanker/georanker-web-scraping-mcp')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GEORANKER_MCP_AUTO_UPDATE: '0'
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.3'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test the client
+        run: npm test
+      - name: Check the package boundary
+        run: npm run pack:check
+      - name: Prepare and clean-install the runtime artifact
+        run: node scripts/prepare-release.mjs --output "$RUNNER_TEMP/client-release"
+      - name: Attest the runtime artifact
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: ${{ runner.temp }}/client-release/client-update.tgz
+          create-storage-record: false
+      - name: Publish the attested update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$GITHUB_REF" = refs/heads/main
+          cp "$ATTESTATION_BUNDLE" "$RUNNER_TEMP/client-release/client-update.sigstore.json"
+          remote_head="$(git ls-remote --exit-code "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" refs/heads/main)"
+          test "${remote_head%%$'\t'*}" = "$GITHUB_SHA"
+          client_version="$(node --input-type=module -e 'import { readFileSync } from "node:fs"; process.stdout.write(JSON.parse(readFileSync("package.json", "utf8")).version)')"
+          gh release create "client-$GITHUB_SHA" \
+            "$RUNNER_TEMP/client-release/client-update.tgz" \
+            "$RUNNER_TEMP/client-release/client-update.sigstore.json" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "MCP client $client_version" \
+            --notes "GeoRanker MCP client update with verified automatic updates and the current hosted tool contract." \
+            --latest

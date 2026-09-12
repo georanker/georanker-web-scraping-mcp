@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, type ServerCapabilities } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError, type ServerCapabilities } from '@modelcontextprotocol/sdk/types.js';
 import { createSupervisor, createWorker } from '../src/supervisor.js';
 import { updateDirectory, type UpdateOptions, type UpdateResult } from '../src/updater.js';
 
@@ -48,6 +48,8 @@ async function fixture(t: TestContext, behaviors: Record<string, WorkerBehavior>
   let next: UpdateResult = { status: 'current', commit: COMMIT_A };
   let checkFailure = false;
   let checks = 0;
+  const checkArguments: unknown[][] = [];
+  let checkWait: Promise<void> | undefined;
   const options: UpdateOptions = {
     repository: 'georanker/georanker-seo-mcp', version: '0.13.0', bundledRoot: ROOT_A,
     env: { GEORANKER_MCP_UPDATE_DIR: state }, log: message => { logs.push(message); },
@@ -57,8 +59,10 @@ async function fixture(t: TestContext, behaviors: Record<string, WorkerBehavior>
     now: () => now,
     idleMs: 60_000,
     select: async () => selected,
-    check: async () => {
+    check: async (...args: unknown[]) => {
       checks++;
+      checkArguments.push(args);
+      if (checkWait) await checkWait;
       if (checkFailure) throw new Error('Fixture release feed unavailable.');
       return next;
     },
@@ -79,6 +83,11 @@ async function fixture(t: TestContext, behaviors: Record<string, WorkerBehavior>
       server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const action = String(request.params.arguments?.action || 'immediate');
         record.invocations.push(action);
+        const diagnostic = { error: { code: String(request.params.arguments?.code || 'REMOTE_SCHEMA_MISMATCH'), message: 'Fixture compatibility failure.' } };
+        if (action === 'error') return { content: [{ type: 'text' as const, text: JSON.stringify(diagnostic) }], structuredContent: diagnostic, isError: true };
+        if (action === 'text-error') return { content: [{ type: 'text' as const, text: JSON.stringify(diagnostic) }], isError: true };
+        if (action === 'rpc-error') throw new McpError(ErrorCode.InvalidRequest, diagnostic.error.message, diagnostic.error);
+        if (action === 'untrusted-text') return { content: [{ type: 'text' as const, text: JSON.stringify(diagnostic) }], structuredContent: { root, action } };
         if (action === 'hold') {
           extra.signal.addEventListener('abort', () => { record.canceled.resolve(); }, { once: true });
           record.entered.resolve();
@@ -108,7 +117,8 @@ async function fixture(t: TestContext, behaviors: Record<string, WorkerBehavior>
   await host.connect(hostTransport);
   t.after(async () => { await supervisor.close(); await host.close(); });
   return {
-    supervisor, host, logs, records, options,
+    supervisor, host, logs, records, options, checkArguments,
+    waitForCheck(value?: Promise<void>) { checkWait = value; },
     get checks() { return checks; },
     get hostClosed() { return hostClosed; },
     advance(ms = 60_001) { now += ms; },
@@ -415,5 +425,149 @@ test('forwarding outlives the remote request budget and a forwarding timeout pin
     old.complete.resolve();
   } finally {
     t.mock.timers.reset();
+  }
+});
+
+test('compatibility errors trigger a forced check immediately after an ordinary check without replaying work', { timeout: 5_000 }, async t => {
+  for (const code of ['REMOTE_SCHEMA_MISMATCH', 'REMOTE_PROFILE_MISMATCH', 'REMOTE_VERSION_MISMATCH', 'CLIENT_VERSION_MISMATCH']) {
+    const f = await fixture(t);
+    await f.supervisor.checkNow();
+    f.advance(1);
+    const result = await f.host.callTool({ name: 'fixture', arguments: { action: 'error', code } });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(result.isError, true);
+    assert.equal((result.structuredContent as { error: { code: string } }).error.code, code);
+    assert.deepEqual(f.checkArguments, [[false], [true]], code + ' must bypass the ordinary five-minute cooldown.');
+    assert.deepEqual(f.records[0]!.invocations, ['error'], 'The compatibility failure must reach the host without retrying its tool.');
+    assert.equal(f.records.length, 1);
+    assert.equal(f.hostClosed, 0);
+    assert.deepEqual(f.logs, []);
+  }
+});
+
+test('text-only and thrown compatibility diagnostics also trigger one forced check', { timeout: 5_000 }, async t => {
+  for (const action of ['text-error', 'rpc-error']) {
+    const f = await fixture(t);
+    const request = f.host.callTool({ name: 'fixture', arguments: { action, code: 'REMOTE_SCHEMA_MISMATCH' } });
+    if (action === 'rpc-error') await assert.rejects(request, /Fixture compatibility failure/);
+    else assert.equal((await request).isError, true);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.deepEqual(f.checkArguments, [[true]], action);
+    assert.deepEqual(f.records[0]!.invocations, [action]);
+    assert.deepEqual(f.logs, []);
+  }
+});
+
+test('ordinary errors and successful source text containing compatibility codes never force an update check', { timeout: 5_000 }, async t => {
+  const f = await fixture(t);
+  assert.equal((await f.host.callTool({ name: 'fixture', arguments: { action: 'error', code: 'RATE_LIMIT' } })).isError, true);
+  assert.equal((await f.host.callTool({ name: 'fixture', arguments: { action: 'text-error', code: 'INVALID_ARGUMENTS' } })).isError, true);
+  await assert.rejects(f.host.callTool({ name: 'fixture', arguments: { action: 'rpc-error', code: 'PROVIDER_ERROR' } }), /Fixture compatibility failure/);
+  const source = await f.host.callTool({ name: 'fixture', arguments: { action: 'untrusted-text', code: 'REMOTE_SCHEMA_MISMATCH' } });
+  assert.notEqual(source.isError, true);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(f.checkArguments, []);
+  assert.deepEqual(f.records[0]!.invocations, ['error', 'text-error', 'rpc-error', 'untrusted-text']);
+  assert.equal(f.records.length, 1);
+  assert.deepEqual(f.logs, []);
+});
+
+test('concurrent and repeated compatibility errors coalesce without delaying responses or disabling ordinary checks', { timeout: 5_000 }, async t => {
+  const f = await fixture(t);
+  const checkGate = deferred();
+  f.waitForCheck(checkGate.promise);
+  const results = await Promise.all(Array.from({ length: 5 }, () =>
+    f.host.callTool({ name: 'fixture', arguments: { action: 'error', code: 'REMOTE_SCHEMA_MISMATCH' } })));
+  assert.ok(results.every(result => result.isError === true), 'Tool errors must return while the release check remains pending.');
+  assert.deepEqual(f.checkArguments, [[true]]);
+  assert.equal(f.records[0]!.invocations.length, 5, 'Each submitted tool is executed exactly once.');
+  f.waitForCheck();
+  checkGate.resolve();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  await f.host.callTool({ name: 'fixture', arguments: { action: 'error', code: 'REMOTE_VERSION_MISMATCH' } });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(f.checkArguments, [[true]], 'One worker release gets one urgent check per host session.');
+  f.advance(300_001);
+  await f.supervisor.checkNow();
+  assert.deepEqual(f.checkArguments, [[true], [false]], 'Routine checks continue after the immediate compatibility check.');
+  assert.equal(f.records[0]!.invocations.length, 6);
+  assert.deepEqual(f.logs, []);
+});
+
+test('an urgent compatibility check prepares an update while preserving unrelated active work and the failed call', { timeout: 5_000 }, async t => {
+  const f = await fixture(t);
+  const old = f.records[0]!;
+  const active = f.host.callTool({ name: 'fixture', arguments: { action: 'hold' } });
+  await old.entered.promise;
+  f.prepare();
+  const failure = await f.host.callTool({ name: 'fixture', arguments: { action: 'error', code: 'REMOTE_SCHEMA_MISMATCH' } });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(failure.isError, true);
+  assert.deepEqual(f.checkArguments, [[true]]);
+  assert.equal(f.supervisor.activeRequests, 1);
+  f.advance();
+  await f.supervisor.applyIfIdle();
+  assert.equal(f.supervisor.workerRoot, ROOT_A);
+  assert.equal(old.closed, false);
+  assert.deepEqual(old.invocations, ['hold', 'error']);
+  assert.equal(f.records.length, 1);
+  old.complete.resolve();
+  assert.equal(resultRoot(await active), ROOT_A);
+  await f.supervisor.applyIfIdle();
+  assert.equal(f.supervisor.workerRoot, ROOT_A, 'Handover still waits for the idle period after active work finishes.');
+  f.advance();
+  await f.supervisor.applyIfIdle();
+  assert.equal(f.supervisor.workerRoot, ROOT_B);
+  assert.deepEqual(old.invocations, ['hold', 'error']);
+  assert.deepEqual(f.records[1]!.invocations, [], 'A prepared release must not replay either request.');
+  assert.equal(f.hostClosed, 0);
+  assert.equal(f.logs.length, 1);
+});
+
+test('an unavailable urgent compatibility check stays silent and preserves the original diagnostic', { timeout: 5_000 }, async t => {
+  const f = await fixture(t);
+  f.unavailable();
+  const result = await f.host.callTool({ name: 'fixture', arguments: { action: 'error', code: 'REMOTE_SCHEMA_MISMATCH' } });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(result.isError, true);
+  assert.equal((result.structuredContent as { error: { code: string } }).error.code, 'REMOTE_SCHEMA_MISMATCH');
+  assert.deepEqual(f.checkArguments, [[true]]);
+  assert.deepEqual(f.logs, []);
+  assert.equal(f.supervisor.workerRoot, ROOT_A);
+  assert.equal(f.hostClosed, 0);
+});
+
+test('an explicit auto-update opt-out suppresses urgent compatibility checks too', { timeout: 5_000 }, async t => {
+  const f = await fixture(t);
+  f.options.env.GEORANKER_MCP_AUTO_UPDATE = '0';
+  const result = await f.host.callTool({ name: 'fixture', arguments: { action: 'error', code: 'REMOTE_SCHEMA_MISMATCH' } });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(result.isError, true);
+  assert.deepEqual(f.checkArguments, []);
+  assert.deepEqual(f.logs, []);
+  assert.equal(f.records.length, 1);
+});
+
+test('real worker startup preserves only an explicit bounded compatibility diagnostic', { timeout: 10_000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'georanker-supervisor-startup-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'dist/src'), { recursive: true });
+  await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }));
+  for (const [stderr, expectedCode] of [
+    ['GEORANKER_WORKER_ERROR ' + JSON.stringify({ code: 'REMOTE_SCHEMA_MISMATCH', message: 'Fixture schemas are incompatible.' }) + '\n', 'REMOTE_SCHEMA_MISMATCH'],
+    [JSON.stringify({ code: 'REMOTE_SCHEMA_MISMATCH', message: 'Untagged text is not a worker diagnostic.' }) + '\n', undefined],
+    ['GEORANKER_WORKER_ERROR ' + JSON.stringify({ code: 'UNRELATED_PROVIDER_ERROR', message: 'Fixture provider failure.' }) + '\n', undefined],
+    ['GEORANKER_WORKER_ERROR ' + JSON.stringify({ code: 'REMOTE_SCHEMA_MISMATCH', message: 'x'.repeat(8193) }) + '\n', undefined],
+  ] as const) {
+    await writeFile(join(root, 'dist/src/worker.js'), 'process.stderr.write(' + JSON.stringify(stderr) + ', () => process.exit(1));\n');
+    await assert.rejects(createWorker(root, { PATH: process.env.PATH, GEORANKER_MCP_AUTO_UPDATE: '0' }), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      if (expectedCode) {
+        assert.equal((error as { code?: unknown }).code, expectedCode);
+        assert.equal(error.message, 'Fixture schemas are incompatible.');
+      }
+      else assert.notEqual((error as { code?: unknown }).code, 'REMOTE_SCHEMA_MISMATCH');
+      return true;
+    });
   }
 });

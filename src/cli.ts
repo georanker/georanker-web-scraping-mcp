@@ -34,31 +34,36 @@ async function runBundled(): Promise<void> {
   await runtime.run();
 }
 
-async function runRelease(root: string): Promise<void> {
+interface StartupRecovery { checksRemaining: number }
+async function runRelease(root: string, recovery: StartupRecovery): Promise<void> {
   if (root === options.bundledRoot) return runBundled();
   const client = await import(pathToFileURL(resolve(root, 'dist/src/cli.js')).href);
   if (typeof client.launch !== 'function') throw new Error('Prepared client does not export its launcher.');
   // The selected release owns its runtime AND future update checks. Avoid recursion.
-  await client.launch(true);
+  await client.launch(true, recovery);
 }
 
 // This export is the stable delegation contract for already-installed launchers.
 // bundledOnly is used only by a parent launcher after it selects a verified release.
-export async function launch(bundledOnly = false): Promise<void> {
+export async function launch(bundledOnly = false, recovery: StartupRecovery = { checksRemaining: 1 }): Promise<void> {
   if (args.length > 1 || (args.length === 1 && !supported.includes(args[0]))) {
     throw Object.assign(new Error('Unsupported argument. Use --help. This package only connects to the hosted GeoRanker service.'), { code: 'CLI_ARGUMENTS' });
   }
-  if (bundledOnly) return runBundled();
-
   const attempted = new Set<string>();
   let failure: unknown;
+  // A cached launcher must own recovery too, even when an older bootstrap delegates.
+  if (bundledOnly) {
+    attempted.add(options.bundledRoot);
+    try { await runBundled(); return; }
+    catch (error) { failure = error; }
+  }
   // Initialization may fall back through current, previous and bundled releases.
   // runtime.run rejects only before a usable stdio connection is established.
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; !bundledOnly && attempt < 3; attempt++) {
     const release = await selectRelease(options);
     if (attempted.has(release.root)) break;
     attempted.add(release.root);
-    try { await runRelease(release.root); return; }
+    try { await runRelease(release.root, recovery); return; }
     catch (error) {
       failure = error;
       if (!release.commit) break;
@@ -75,12 +80,19 @@ export async function launch(bundledOnly = false): Promise<void> {
 
   // Older tool schemas can fail initialization before periodic updates start.
   // Check once here, before accepting requests, so a verified compatible update can heal it.
-  if (options.env.GEORANKER_MCP_AUTO_UPDATE !== '0' && (args.length === 0 || args[0] === '--setup')) {
-    options.log?.('Client initialization failed. Checking for a signed compatible update.');
-    await checkForUpdate(options);
+  if (recovery.checksRemaining > 0 && options.env.GEORANKER_MCP_AUTO_UPDATE !== '0' && (args.length === 0 || args[0] === '--setup')) {
+    // Share one recovery check across delegated launchers to bound startup retries.
+    recovery.checksRemaining--;
+    // Initialization cannot wait for the normal polling cooldown to heal stale schemas.
+    const prepared = await checkForUpdate({ ...options, force: true, log: undefined });
     const updated = await selectRelease(options);
     if (updated.commit && !attempted.has(updated.root)) {
-      try { await runRelease(updated.root); return; }
+      try {
+        await runRelease(updated.root, recovery);
+        try { options.log?.('Applied verified client update ' + (prepared.version || updated.commit) + ' during startup recovery.'); }
+        catch { /* Logging cannot interrupt a recovered connection. */ }
+        return;
+      }
       catch (error) {
         failure = error;
         await rollbackRelease(options, updated.commit);

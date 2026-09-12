@@ -13,7 +13,7 @@ export interface Worker {
 }
 export interface SupervisorDependencies {
   createWorker?: (root: string) => Promise<Worker>;
-  check?: () => Promise<UpdateResult>;
+  check?: (force?: boolean) => Promise<UpdateResult>;
   select?: () => Promise<{ root: string; commit?: string }>;
   now?: () => number;
   idleMs?: number;
@@ -23,6 +23,46 @@ const canonical = (value: unknown): string => JSON.stringify(value, (_key, item)
   item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 
+const COMPATIBILITY_CODES = new Set([
+  'REMOTE_SCHEMA_MISMATCH', 'REMOTE_PROFILE_MISMATCH', 'REMOTE_VERSION_MISMATCH', 'CLIENT_VERSION_MISMATCH',
+]);
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+function compatibilityEnvelope(value: unknown): boolean {
+  const data = record(value), error = record(data?.error) || data;
+  return typeof error?.code === 'string' && COMPATIBILITY_CODES.has(error.code);
+}
+function compatibilityResult(value: unknown): boolean {
+  const result = record(value);
+  // Successful scraped/source content is never interpreted as a client diagnostic.
+  if (result?.isError !== true) return false;
+  if (compatibilityEnvelope(result.structuredContent)) return true;
+  let text = '';
+  if (Array.isArray(result.content)) for (const value of result.content) {
+    const block = record(value);
+    if (block?.type !== 'text' || typeof block.text !== 'string') continue;
+    text += (text ? '\n' : '') + block.text;
+    if (text.length > 8192) return false;
+  }
+  try { return compatibilityEnvelope(JSON.parse(text)); } catch { return false; }
+}
+function compatibilityError(value: unknown): boolean {
+  return compatibilityEnvelope(value) || compatibilityEnvelope(record(value)?.data);
+}
+function workerStartupDiagnostic(stderr: Buffer): Error | undefined {
+  for (const line of stderr.toString('utf8').split('\n')) {
+    if (!line.startsWith('GEORANKER_WORKER_ERROR ')) continue;
+    try {
+      const value = record(JSON.parse(line.slice('GEORANKER_WORKER_ERROR '.length)));
+      if (typeof value?.code === 'string' && COMPATIBILITY_CODES.has(value.code) && typeof value.message === 'string' &&
+          value.message.length > 0 && value.message.length <= 8192) {
+        return Object.assign(new Error(value.message), { code: value.code });
+      }
+    } catch { /* Only a bounded, explicit internal worker diagnostic is accepted. */ }
+  }
+  return undefined;
+}
+
 export async function createWorker(root: string, environment: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<Worker> {
   const env = Object.fromEntries(Object.entries({ ...environment, GEORANKER_MCP_AUTO_UPDATE: '0' })
     .filter((entry): entry is [string, string] => entry[1] !== undefined));
@@ -30,13 +70,21 @@ export async function createWorker(root: string, environment: NodeJS.ProcessEnv,
   const transport = new StdioClientTransport({
     command: process.execPath, args: [resolve(root, 'dist/src/worker.js')], env, stderr: 'pipe',
   });
-  transport.stderr?.on('data', () => {}); // Routine worker/setup output stays private.
+  let stderr = Buffer.alloc(0), starting = true;
+  transport.stderr?.on('data', (chunk: Buffer | string) => {
+    // Drain routine output without exposing it. Retain only bounded startup evidence.
+    if (!starting || stderr.length >= 16 * 1024) return;
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    stderr = Buffer.concat([stderr, bytes.subarray(0, 16 * 1024 - stderr.length)]);
+  });
   const abort = () => { void client.close().catch(() => {}); };
   signal?.addEventListener('abort', abort, { once: true });
   try {
     if (signal?.aborted) throw new Error('Supervisor closed');
     await client.connect(transport, { timeout: 30000 });
     if (signal?.aborted) throw new Error('Supervisor closed');
+    starting = false;
+    stderr = Buffer.alloc(0);
     return { root, client, async close() {
       signal?.removeEventListener('abort', abort);
       await client.close();
@@ -44,7 +92,7 @@ export async function createWorker(root: string, environment: NodeJS.ProcessEnv,
   } catch (error) {
     signal?.removeEventListener('abort', abort);
     await client.close().catch(() => {});
-    throw error;
+    throw (!signal?.aborted && workerStartupDiagnostic(stderr)) || error;
   }
 }
 
@@ -67,6 +115,7 @@ export class Supervisor {
   private readonly capabilities: ServerCapabilities;
   private readonly shutdown: AbortController;
   private readonly reconnectRoots = new Set<string>();
+  private readonly mismatchCheckedRoots = new Set<string>();
 
   private constructor(
     private readonly options: UpdateOptions,
@@ -98,14 +147,17 @@ export class Supervisor {
       if (extra.signal.aborted) cancelled();
       try {
         const progressToken = request.params?._meta?.progressToken;
-        return await target.client.request({ method: request.method, params: request.params }, ResultSchema, {
+        const result = await target.client.request({ method: request.method, params: request.params }, ResultSchema, {
           signal: extra.signal, timeout: 110000,
           ...(progressToken !== undefined ? { onprogress: progress => {
             void extra.sendNotification({ method: 'notifications/progress', params: { ...progress, progressToken } }).catch(() => {});
           } } : {}),
         });
+        if (compatibilityResult(result)) this.checkCompatibility(target);
+        return result;
       } catch (error) {
         if (error instanceof McpError && error.code === ErrorCode.RequestTimeout) this.cancelled = true;
+        if (compatibilityError(error)) this.checkCompatibility(target);
         throw error;
       } finally {
         extra.signal.removeEventListener('abort', cancelled);
@@ -159,10 +211,18 @@ export class Supervisor {
       }
     };
   }
-  async checkNow(): Promise<void> {
+  private checkCompatibility(worker: Worker): void {
+    if (this.closed || this.options.env.GEORANKER_MCP_AUTO_UPDATE === '0' || this.mismatchCheckedRoots.has(worker.root)) return;
+    // A diagnosed incompatible worker gets one immediate feed check per session.
+    // Repeated failed calls cannot bypass throttling repeatedly or replay paid work.
+    this.mismatchCheckedRoots.add(worker.root);
+    void this.checkNow(true).catch(() => {});
+  }
+  async checkNow(force = false): Promise<void> {
     if (this.closed) return;
     try {
-      await (this.dependencies.check || (() => checkForUpdate({ ...this.options, force: false, log: undefined })))();
+      if (this.dependencies.check) await this.dependencies.check(force);
+      else await checkForUpdate({ ...this.options, force, log: undefined, signal: this.shutdown.signal });
     } catch { /* Routine unavailable checks are silent. */ }
     await this.acceptPrepared();
   }

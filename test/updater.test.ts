@@ -509,3 +509,31 @@ test('verified bundle bytes are reused only for the same product and failures ne
   await assert.rejects(verify('untrusted/repository', bytes), /Unsupported update repository/);
   assert.equal(verifications, 5);
 });
+
+
+for (const delegated of [false, true]) test('startup recovery bypasses a fresh cooldown, delegated=' + delegated, async t => {
+  const { root, options } = await fixture(t, CLIENT_REPOSITORY);
+  options.version = CLIENT_VERSION;
+  const directory = updateDirectory(options);
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, 'last-check.json'), JSON.stringify({ checkedAt: Date.now() }));
+  const code = `
+    process.argv = [process.execPath, '/fixture/parent-launcher.js', '--setup'];
+    const urls = [];
+    globalThis.fetch = async url => { urls.push(String(url)); throw new Error('Fixture offline'); };
+    const { launch } = await import(${JSON.stringify(new URL('../src/cli.js', import.meta.url).href)});
+    const recovery = { checksRemaining: 1 };
+    try { await launch(${delegated}, recovery); } catch { /* Recovery must check once without submitting work. */ }
+    try { await launch(true, recovery); } catch { /* A delegated retry shares the same bounded recovery budget. */ }
+    process.stdout.write(JSON.stringify(urls));
+  `;
+  const launched = spawnSync(process.execPath, ['--input-type=module', '-e', code], {
+    encoding: 'utf8', timeout: 10_000,
+    env: { PATH: process.env.PATH, ...options.env, GEORANKER_MCP_URL: 'http://127.0.0.1:1', GEORANKER_STATE_DIR: join(root, 'state') },
+  });
+  assert.equal(launched.status, 0, launched.stderr);
+  assert.equal(launched.stderr, '', 'Unavailable recovery checks stay silent.');
+  const urls: string[] = JSON.parse(launched.stdout);
+  assert.equal(urls.filter(url => url === 'https://github.com/' + CLIENT_REPOSITORY + '/releases/latest/download/client-update.sigstore.json').length, 1);
+  assert.equal(urls.some(url => /serp\/new|ranktracker/.test(url)), false);
+});

@@ -1,8 +1,12 @@
 {
   "name": "@georanker/web-scraping-mcp",
-  "version": "0.13.1",
-  "private": true,
-  "license": "UNLICENSED",
+  "version": "0.14.0",
+  "private": false,
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "description": "Public web page content as readable text or HTML for AI agents, powered by GeoRanker.",
   "repository": {
@@ -17,6 +21,8 @@
   },
   "files": [
     "dist/src",
+    "npm-shrinkwrap.json",
+    "LICENSE",
     "README.md",
     "metadata.json",
     "docs/install.md",
@@ -26,8 +32,8 @@
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test dist/test/*.test.js",
-    "prepack": "npm run build",
-    "pack:check": "npm run build && node scripts/check-package.mjs"
+    "prepack": "npm run build && node scripts/prepare-npm.mjs",
+    "pack:check": "npm run build && node scripts/prepare-npm.mjs && node scripts/check-package.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

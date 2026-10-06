@@ -2,11 +2,11 @@
 
 Public web page content as readable text or HTML for AI agents, powered by GeoRanker.
 
-Client version 0.13.1. The client source is available on GitHub. The npm package is not published. The hosted service is managed separately by GeoRanker.
+Client version 0.14.0. The client is MIT-licensed. npm is the primary installation route for released versions; GitHub source installation is the fallback. If the requested npm version is not yet available, use the source instructions below. The hosted service is managed separately by GeoRanker.
 
 **Install once, receive updates automatically**
 
-Build this checkout with a supported Node.js version (see package.json engines), npm and Git, run the no-query setup check, and add the stable dist/src/cli.js launcher to your AI host. Follow the [installation guide](docs/install.md) for configuration and migration from older clients.
+Use a supported Node.js version (see package.json engines) and npm. Run the no-query setup check, then add the npm launcher to your AI host. Git and a TypeScript build are needed only for the source-install fallback. Follow the [installation guide](docs/install.md) for configuration and migration from older clients.
 
 Each push to the public main branch runs the release workflow. After tests and clean-install checks pass, it publishes a client package with signed GitHub provenance. The launcher checks for this release at startup and every five minutes while running, verifies its repository, workflow and commit identity and artifact checksum, then installs locked production dependencies without lifecycle scripts. Automatic updates need Node.js and npm; Git and TypeScript builds are not required after initial installation. From 0.13.1, a version or schema compatibility error triggers an immediate signed release check without waiting for the five-minute interval. Runtime recovery checks are limited to once per worker release per session; ordinary errors do not trigger them. Active calls remain protected and failed requests are never replayed. From 0.13.0, a stable supervisor keeps the host MCP connection open and runs tools through an internal worker. It applies a verified worker update when no tool calls are active and 60 seconds have passed without tool activity. Idle refers to this MCP connection; existing provider jobs can remain pending. Calls are not replayed. A failed candidate leaves the current worker in place. Automatic checks stay quiet when nothing changes or an update is unavailable; a message is written only when an update is applied. After a cancelled or timed-out worker request, worker swaps wait for a normal host reconnect because completion is uncertain. Changes to the supervisor itself take effect on a normal host restart. Existing 0.12.0 clients acquire the supervisor on their next reconnect once 0.13.0 is prepared; subsequent compatible worker updates apply within the session without reinstalling or reconfiguring the host. If the release workflow or update verification fails, the installed version continues working. Use --update to prepare the latest commit immediately, or set GEORANKER_MCP_AUTO_UPDATE=0 to opt out. Updates do not create provider data jobs.
 
@@ -33,4 +33,4 @@ npm test
 npm run pack:check
 ```
 
-The package is UNLICENSED and marked private in package.json to prevent npm publication. GitHub source availability does not grant an open-source license. metadata.json describes the product; it is not an official MCP Registry submission.
+This client and its documentation are licensed under MIT; see LICENSE. Dependencies retain their own licenses. The hosted GeoRanker service, its private source and data access are governed separately by GeoRanker's service terms. Public exports allow npm publication; internal exports remain private. metadata.json describes the product; it is not an official MCP Registry submission.

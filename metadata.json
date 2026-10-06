@@ -13,9 +13,15 @@
   "hostedPath": "/scraping/mcp",
   "defaultCacheSeconds": 604800,
   "forceLiveParameter": "forceLive",
-  "version": "0.13.1",
-  "status": "public-source",
-  "packagePublished": false,
+  "version": "0.14.0",
+  "status": "public-client",
+  "license": "MIT",
+  "distribution": {
+    "primary": "npm",
+    "packageUrl": "https://www.npmjs.com/package/@georanker/web-scraping-mcp",
+    "availabilitySource": "https://registry.npmjs.org/",
+    "fallback": "github-source"
+  },
   "autoUpdate": {
     "repository": "https://github.com/georanker/georanker-web-scraping-mcp",
     "branch": "main",

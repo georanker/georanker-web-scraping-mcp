@@ -4,18 +4,25 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: Publish a new npm version using the configured trusted publisher
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: client-release-main
-  cancel-in-progress: true
+  group: client-release-main-${{ inputs.publish_npm && 'npm' || 'update' }}
+  cancel-in-progress: ${{ !inputs.publish_npm }}
 
 jobs:
   release:
     if: >-
       github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_dispatch' || !inputs.publish_npm) &&
       (github.repository == 'georanker/georanker-seo-mcp' ||
        github.repository == 'georanker/georanker-web-scraping-mcp')
     runs-on: ubuntu-24.04
@@ -71,3 +78,38 @@ jobs:
             --title "MCP client $client_version" \
             --notes "GeoRanker MCP client update with verified automatic updates and the current hosted tool contract." \
             --latest
+
+  npm:
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.publish_npm &&
+      github.ref == 'refs/heads/main' &&
+      (github.repository == 'georanker/georanker-seo-mcp' ||
+       github.repository == 'georanker/georanker-web-scraping-mcp')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GEORANKER_MCP_AUTO_UPDATE: '0'
+    steps:
+      - name: Check out the npm release commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.3'
+          registry-url: https://registry.npmjs.org
+      - name: Install npm with trusted publishing support
+        run: npm install --global npm@11.15.0 --ignore-scripts --no-audit --no-fund
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test the npm client
+        run: npm test
+      - name: Check the npm package boundary and MIT license
+        run: npm run pack:check
+      - name: Publish the compiled client with npm provenance
+        run: npm publish --access public --provenance

@@ -28,7 +28,7 @@ const modules = new Set([
   'remote', 'runtime', 'supervisor', 'worker', 'search-depth', 'seo-contract', 'server', 'updater',
 ]);
 const allowedPath = path => {
-  if (['package.json', 'npm-shrinkwrap.json'].includes(path)) return true;
+  if (['package.json', 'npm-shrinkwrap.json', 'LICENSE'].includes(path)) return true;
   const match = /^dist\/src\/([a-z-]+)\.(?:js|d\.ts)$/.exec(path);
   return Boolean(match && modules.has(match[1]));
 };
@@ -46,7 +46,9 @@ const command = (program, commandArgs, cwd) => execFileSync(program, commandArgs
 });
 
 try {
+  assert.equal(packageJson.license, 'MIT');
   await mkdir(join(stage, 'dist', 'src'), { recursive: true });
+  await copyFile(join(root, 'LICENSE'), join(stage, 'LICENSE'));
   const compiled = await readdir(join(root, 'dist', 'src'));
   for (const name of compiled) {
     const relative = 'dist/src/' + name;
@@ -73,7 +75,7 @@ try {
     repository: packageJson.repository,
     engines: packageJson.engines,
     bin: packageJson.bin,
-    files: ['dist/src', 'npm-shrinkwrap.json'],
+    files: ['dist/src', 'npm-shrinkwrap.json', 'LICENSE'],
     dependencies: packageJson.dependencies,
   };
   await writeFile(join(stage, 'package.json'), JSON.stringify(runtimePackage, null, 2) + '\n');
@@ -84,6 +86,7 @@ try {
   const artifact = join(work, packed[0].filename);
   for (const { path } of packed[0].files) assert.ok(allowedPath(path), 'Unexpected package file: ' + path);
   assert.ok(packed[0].files.some(file => file.path === 'npm-shrinkwrap.json'), 'The distributable must contain its dependency lock.');
+  assert.ok(packed[0].files.some(file => file.path === 'LICENSE'), 'The distributable must contain the MIT notice.');
   const entries = command('tar', ['-tzf', artifact], work).trim().split('\n');
   assert.ok(entries.length > 2);
   for (const entry of entries) {

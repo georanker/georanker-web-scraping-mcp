@@ -8,10 +8,10 @@ const cache = mkdtempSync(join(tmpdir(), 'georanker-pack-cache-'));
 let result;
 try { result = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts', '--cache', cache], { encoding: 'utf8' }))[0]; }
 finally { rmSync(cache, { recursive: true, force: true }); }
-const allowedModules = new Set(['cli', 'config', 'enrollment', 'errors', 'identity', 'product', 'product-contract', 'remote', 'runtime', 'supervisor', 'worker', 'updater', 'search-depth', 'seo-contract', 'server']);
+const allowedModules = new Set(['cli', 'config', 'enrollment', 'errors', 'identity', 'product', 'product-contract', 'remote', 'runtime', 'supervisor', 'worker', 'updater', 'search-depth', 'seo-contract', 'whois-contract', 'server']);
 for (const { path } of result.files) {
   const match = /^dist\/src\/([a-z-]+)\.(?:js|d\.ts)$/.exec(path);
-  assert.ok((match && allowedModules.has(match[1])) || ['package.json', 'npm-shrinkwrap.json', 'LICENSE', 'README.md', 'metadata.json', 'docs/install.md', 'docs/privacy.md', 'docs/examples.md', 'docs/seo-reports.md'].includes(path), `Unexpected package file: ${path}`);
+  assert.ok((match && allowedModules.has(match[1])) || ['package.json', 'npm-shrinkwrap.json', 'LICENSE', 'README.md', 'metadata.json', 'docs/install.md', 'docs/privacy.md', 'docs/examples.md', 'docs/seo-reports.md', 'docs/whois.md'].includes(path), `Unexpected package file: ${path}`);
   if (path.endsWith('.js')) {
     const code = readFileSync(path, 'utf8');
     assert.doesNotMatch(code, /GEORANKER_HV_API_KEY|GEORANKER_SEO_API_KEY|seoapi\.georanker\.com|api\.highvolume\.georanker\.com|--issue-token|--revoke-installation|from ['"].*\/(?:accounts|admin|http-server|service|seo-service|seo-config|state|access|client|callbacks)\.js['"]/, `Private service dependency in ${path}`);

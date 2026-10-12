@@ -9,12 +9,16 @@ Use Node.js and npm, including npx. Supported Node.js versions are 22.22.2+ on t
 Run the setup check before configuring your host:
 
 ```sh
-npx --yes @georanker/web-scraping-mcp@0.14.0 --setup
+npx --yes @georanker/web-scraping-mcp@0.15.0 --setup
 ```
 
-These commands require @georanker/web-scraping-mcp@0.14.0 to be available on the public npm registry. If that release is not yet published, use the GitHub source installation below. npx may need registry access to download the package and its dependencies.
+These commands require @georanker/web-scraping-mcp@0.15.0 to be available on the public npm registry. If that release is not yet published, use the GitHub source installation below. npx may need registry access to download the package and its dependencies.
 
 The setup check verifies enrollment and the expected tools without a data query. Set GEORANKER_MCP_URL only when using a different endpoint. An unavailable or mismatched endpoint must be fixed by the operator; do not delete installation state to retry.
+
+The hosted endpoint is https://mcp.georanker.com. The SEO product connects to
+/seo/mcp and Web Scraping connects to /scraping/mcp. The client supplies its
+installation headers automatically.
 
 The host examples below use the same npm bootstrap version. If a graphical application cannot find npx, use the absolute path to its executable and follow the host's platform-specific launch instructions. Preserve unrelated configuration entries. Reconnect the host after changes, enable/trust the tools when requested, then run the sample prompt.
 
@@ -36,7 +40,7 @@ For a source installation, replace each npx command and its package arguments in
 
 Keep your host configured to the same npm bootstrap command or source launcher. Starting with client 0.13.0, it checks for released updates from the public georanker/georanker-web-scraping-mcp repository at startup and every five minutes while the MCP is running. A push to main automatically runs the repository's release workflow. Only after its tests and clean-install checks pass does that workflow publish the client release with signed GitHub provenance.
 
-The @0.14.0 in the npx command pins the npm bootstrap package. It does not disable GeoRanker's automatic updater: the launcher can select a newer verified release from its separate update cache. To keep running exactly the selected npm version, also set GEORANKER_MCP_AUTO_UPDATE=0 in the host's MCP environment, then restart or reconnect. Manage future version changes explicitly in that configuration.
+The @0.15.0 in the npx command pins the npm bootstrap package. It does not disable GeoRanker's automatic updater: the launcher can select a newer verified release from its separate update cache. To keep running exactly the selected npm version, also set GEORANKER_MCP_AUTO_UPDATE=0 in the host's MCP environment, then restart or reconnect. Manage future version changes explicitly in that configuration.
 
 From 0.13.1, a version or schema compatibility error triggers an immediate signed release check without waiting for the five-minute interval. Runtime recovery checks are limited to once per worker release per session; ordinary errors do not trigger them. Active calls remain protected and failed requests are never replayed.
 
@@ -47,7 +51,7 @@ Updates require a supported Node.js version and npm on the MCP process's PATH, a
 With automatic updates enabled, prepare the latest signed release immediately:
 
 ```sh
-npx --yes @georanker/web-scraping-mcp@0.14.0 --update
+npx --yes @georanker/web-scraping-mcp@0.15.0 --update
 ```
 
 For the source fallback, use:
@@ -59,6 +63,24 @@ node dist/src/cli.js --update
 A running 0.13.0+ supervisor applies a prepared compatible worker during the next idle period. After a cancelled or timed-out worker request, automatic worker swaps wait for a normal host reconnect because completion is uncertain. Changes to supervisor code itself take effect on a normal host restart or MCP reconnect. Set GEORANKER_MCP_AUTO_UPDATE=0 in the host's MCP environment to disable automatic updates. A failed release workflow, download, signature verification or setup check leaves the available client version in place. Automatic checks are quiet when no update is available or a check cannot complete. An applied update is reported on stderr, separate from the MCP protocol.
 
 **Migration for existing installations**
+
+Updated clients connect to mcp.georanker.com and retain the installation identity
+and credential previously used with grmcp.ibl.ro. Both supported GeoRanker origins
+use the existing local identity namespace, shared by SEO and Web Scraping. The old
+hostname remains available to earlier clients. Keep the same GEORANKER_STATE_DIR;
+the domain change does not require deleting state or generating another identity.
+
+If GEORANKER_MCP_URL explicitly names grmcp.ibl.ro, that override continues to use
+the old address. After installing this release, remove the override to use the new
+default, or set the full new product endpoint: https://mcp.georanker.com/seo/mcp
+for SEO, or https://mcp.georanker.com/scraping/mcp for Web Scraping. Manual
+installation IDs, access tokens and device fingerprints remain unchanged.
+
+If both origin directories already contain different identities or credentials,
+the client stops and preserves both copies. Keep a private backup and resolve the
+conflict with the operator; do not discard an identity, replace a valid credential
+or repeatedly enroll to bypass the error. A lost token can be recovered using the
+same identity. Revoked installations remain revoked.
 
 Existing 0.12.0 installations can prepare a current signed release automatically and load its 0.13.0+ supervisor on the next host restart or MCP reconnect. After that one reconnect, compatible worker updates apply inside the session during idle periods. Future changes to the supervisor itself still require a normal restart.
 
@@ -78,7 +100,7 @@ Then restart or reconnect the MCP in your host. Keep the existing launcher path 
 **Codex**
 
 ```sh
-codex mcp add georanker-web-scraping -- npx --yes @georanker/web-scraping-mcp@0.14.0
+codex mcp add georanker-web-scraping -- npx --yes @georanker/web-scraping-mcp@0.15.0
 ```
 
 Use /mcp to inspect the connection. [Official guide](https://developers.openai.com/codex/mcp).
@@ -86,7 +108,7 @@ Use /mcp to inspect the connection. [Official guide](https://developers.openai.c
 **Claude Code**
 
 ```sh
-claude mcp add --scope user --transport stdio georanker-web-scraping -- npx --yes @georanker/web-scraping-mcp@0.14.0
+claude mcp add --scope user --transport stdio georanker-web-scraping -- npx --yes @georanker/web-scraping-mcp@0.15.0
 ```
 
 Use /mcp to inspect the connection. [Official guide](https://code.claude.com/docs/en/mcp).
@@ -98,7 +120,7 @@ Use /mcp to inspect the connection. [Official guide](https://code.claude.com/doc
   "mcpServers": {
     "georanker-web-scraping": {
       "command": "npx",
-      "args": ["--yes", "@georanker/web-scraping-mcp@0.14.0"]
+      "args": ["--yes", "@georanker/web-scraping-mcp@0.15.0"]
     }
   }
 }
@@ -124,7 +146,7 @@ Use “MCP: Add Server,” or .vscode/mcp.json with a servers object:
     "georanker-web-scraping": {
       "type": "stdio",
       "command": "npx",
-      "args": ["--yes", "@georanker/web-scraping-mcp@0.14.0"]
+      "args": ["--yes", "@georanker/web-scraping-mcp@0.15.0"]
     }
   }
 }
@@ -142,7 +164,7 @@ Merge into opencode.json:
   "mcp": {
     "georanker-web-scraping": {
       "type": "local",
-      "command": ["npx", "--yes", "@georanker/web-scraping-mcp@0.14.0"],
+      "command": ["npx", "--yes", "@georanker/web-scraping-mcp@0.15.0"],
       "enabled": true
     }
   }

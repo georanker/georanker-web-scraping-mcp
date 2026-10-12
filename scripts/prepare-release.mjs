@@ -25,7 +25,7 @@ assert.deepEqual(lock.packages[''].dependencies, packageJson.dependencies, 'Runt
 
 const modules = new Set([
   'cli', 'config', 'enrollment', 'errors', 'identity', 'product', 'product-contract',
-  'remote', 'runtime', 'supervisor', 'worker', 'search-depth', 'seo-contract', 'server', 'updater',
+  'remote', 'runtime', 'supervisor', 'worker', 'search-depth', 'seo-contract', 'whois-contract', 'server', 'updater',
 ]);
 const allowedPath = path => {
   if (['package.json', 'npm-shrinkwrap.json', 'LICENSE'].includes(path)) return true;

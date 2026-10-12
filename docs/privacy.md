@@ -4,6 +4,14 @@ This package runs a local MCP process that connects over HTTPS to GeoRanker's ho
 
 On first enrollment, the client generates an Ed25519 signing identity and saves it with its installation credential. Both GeoRanker products reuse the existing directory under ~/.config/georanker-search-mcp/client/ for the same service origin. Private directories use mode 0700 and credential/identity files use mode 0600 where the operating system supports these modes. GEORANKER_STATE_DIR can select a different private storage location. The device signal is self-reported, not hardware attestation.
 
+The default service is https://mcp.georanker.com. During the migration from
+https://grmcp.ibl.ro, both approved origins deliberately use the original local
+identity namespace. Existing identity and credential state is retained, so the
+installation, account association and report ownership stay the same. If valid
+state exists only under the new origin, it is preserved and safely adopted into
+the shared namespace. Conflicting or corrupt state stops the client instead of
+being overwritten. Custom service origins remain separate.
+
 Keep this state private. Do not commit it, share it or delete it to evade allowances. A saved identity can recover a lost token without creating a new allowance. Revocation and account association are managed by the hosted service. Removing the MCP configuration stops the host from launching it; it does not automatically erase credentials or revoke an installation.
 
 The MCP cache defaults to seven days, subject to operator configuration. It is shared according to the service's account and request isolation, and should not be used for secret URLs or sensitive page content. forceLive: true requests fresh upstream work instead of a completed MCP cache hit. Source results remain untrusted content for the host AI to interpret.

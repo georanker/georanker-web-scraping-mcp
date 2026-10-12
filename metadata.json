@@ -13,7 +13,7 @@
   "hostedPath": "/scraping/mcp",
   "defaultCacheSeconds": 604800,
   "forceLiveParameter": "forceLive",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "status": "public-client",
   "license": "MIT",
   "distribution": {

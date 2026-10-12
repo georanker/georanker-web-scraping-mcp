@@ -9,9 +9,10 @@ import { deviceFingerprint } from './identity.js';
 export { deviceFingerprint } from './identity.js';
 import { PRODUCT_PROFILES, SERVER_VERSION, type ProductProfile, type SearchServiceLike, type SearchInput, type SearchResultInput, type FetchPageInput } from './product-contract.js';
 import { SEO_REPORT_CATALOG, SEO_REPORT_HEADER, SEO_TOOL_NAMES, type SeoToolName } from './seo-contract.js';
+import { WHOIS_TOOL, WHOIS_HEADER, WHOIS_CATALOG, type WhoisInput } from './whois-contract.js';
 import { createServer } from './server.js';
 
-export const PILOT_MCP_URL = 'https://grmcp.ibl.ro/mcp';
+export const PILOT_MCP_URL = 'https://mcp.georanker.com/mcp';
 const MAX_ERROR_TEXT = 8192;
 const record = (value: unknown): Record<string, unknown> | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 const localCatalogs = new Map<ProductProfile, Promise<Map<string, unknown>>>();
@@ -105,10 +106,12 @@ function remoteToolError(result: Record<string, unknown>): AppError {
 function requestError(error: AppError, name: string, input: object, profile: ProductProfile): AppError {
   const arguments_ = record(input);
   const details = { ...recoveryFields({ reportId: arguments_?.reportId, jobId: arguments_?.jobId }), ...error.details };
-  details.submissionUncertain = typeof details.submissionUncertain === 'boolean' ? details.submissionUncertain : !name.startsWith('get_');
+  details.submissionUncertain = typeof details.submissionUncertain === 'boolean' ? details.submissionUncertain : (!name.startsWith('get_') || name === WHOIS_TOOL);
   details.automaticRetryPerformed = false;
   if (typeof details.nextAction !== 'string' || !details.nextAction.trim()) {
-    if (details.reportId) {
+    if (name === WHOIS_TOOL) {
+      details.nextAction = 'GeoRanker handles failed WHOIS credit reconciliation on the server. Do not resubmit this failed or uncertain lookup; no automatic lookup retry was performed.';
+    } else if (details.reportId) {
       const getter = name === 'update_rank_tracking_schedule' ? 'get_rank_tracking_report' : name.replace(/^create_/, 'get_');
       details.nextAction = `Retain this reportId and use ${getter} to check the existing report before submitting another report or schedule change.`;
     } else if (details.jobId) {
@@ -116,7 +119,7 @@ function requestError(error: AppError, name: string, input: object, profile: Pro
     } else if (details.submissionUncertain) {
       details.nextAction = 'The submission outcome is unknown. Ask the operator to reconcile this request before resubmitting; another create call could duplicate paid work.';
     } else {
-      details.nextAction = name.startsWith('get_')
+      details.nextAction = name.startsWith('get_') && name !== WHOIS_TOOL
         ? 'Retry this retrieval with the same identifier after resolving the error or waiting for retryAfterSeconds. Do not create a replacement job.'
         : 'No new work was submitted. Resolve the reported error or wait for retryAfterSeconds before explicitly retrying this request.';
     }
@@ -155,6 +158,7 @@ export class RemoteService implements SearchServiceLike {
       this.connection = (async () => {
         this.headers ??= await installationHeaders(this.url, this.env);
         if (this.profile === 'seo') this.headers[SEO_REPORT_HEADER] = SEO_REPORT_CATALOG;
+        if (this.profile !== 'scraping') this.headers[WHOIS_HEADER] = WHOIS_CATALOG;
         // JSON-RPC IDs are unique only inside this transport. The namespace
         // lets a stateless server correlate cancellation without affecting
         // another AI host sharing the same installation credentials.
@@ -176,7 +180,7 @@ export class RemoteService implements SearchServiceLike {
   async initialize(): Promise<void> {
     const listed = await (await this.connect()).listTools();
     const product = PRODUCT_PROFILES[this.profile];
-    const required = [product.resultTool, ...('searchTool' in product ? [product.searchTool] : []), ...('fetchTool' in product ? [product.fetchTool] : []), ...(this.profile === 'seo' ? SEO_TOOL_NAMES : [])].sort();
+    const required = [product.resultTool, ...('searchTool' in product ? [product.searchTool] : []), ...('fetchTool' in product ? [product.fetchTool] : []), ...(this.profile === 'seo' ? SEO_TOOL_NAMES : []), ...(this.profile !== 'scraping' ? [WHOIS_TOOL] : [])].sort();
     const available = listed.tools.map(tool => tool.name).sort();
     if (required.length !== available.length || required.some((name, index) => name !== available[index])) {
       throw new AppError('REMOTE_PROFILE_MISMATCH', `The hosted endpoint does not provide the expected tools for ${product.title}. Check GEORANKER_MCP_URL and the server deployment. No query was submitted.`, undefined, { submissionUncertain: false, automaticRetryPerformed: false });
@@ -212,6 +216,10 @@ export class RemoteService implements SearchServiceLike {
       if (refusal) throw requestError(refusal, name, input, this.profile);
       throw requestError(new AppError('REMOTE_REQUEST_FAILED', 'The hosted MCP request did not complete. No automatic tool retry was performed.'), name, input, this.profile);
     }
+  }
+  getWhois(input: WhoisInput, signal?: AbortSignal): Promise<object> {
+    if (this.profile === 'scraping') return Promise.reject(new AppError('PROFILE_TOOL_UNAVAILABLE', 'WHOIS requires the SEO or combined MCP profile.'));
+    return this.call(WHOIS_TOOL, input, signal);
   }
   search(input: SearchInput, signal?: AbortSignal): Promise<object> {
     const product = PRODUCT_PROFILES[this.profile];

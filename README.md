@@ -2,7 +2,7 @@
 
 Public web page content as readable text or HTML for AI agents, powered by GeoRanker.
 
-Client version 0.14.0. The client is MIT-licensed. npm is the primary installation route for released versions; GitHub source installation is the fallback. If the requested npm version is not yet available, use the source instructions below. The hosted service is managed separately by GeoRanker.
+Client version 0.15.0. The client is MIT-licensed. npm is the primary installation route for released versions; GitHub source installation is the fallback. If the requested npm version is not yet available, use the source instructions below. The hosted service is managed separately by GeoRanker.
 
 **Install once, receive updates automatically**
 
@@ -19,7 +19,7 @@ Each push to the public main branch runs the release workflow. After tests and c
 
 Completed MCP results are eligible for reuse for seven days by default. Pass forceLive: true to bypass completed cache and request fresh upstream work. Pending work can be reused safely; retrieve the returned job ID instead of creating another request. Results disclose cache metadata and provider generation time when supplied.  See [examples and limits](docs/examples.md).
 
-The client enrolls automatically and stores its own installation credentials. Both GeoRanker products share their installation/account relationship for the same service origin. No manual provider API key is required. Setup performs no data query; data calls use the configured allowance and provider credits.
+The client enrolls automatically and stores its own installation credentials. Both GeoRanker products share their installation/account relationship. The default hosted origin is https://mcp.georanker.com. Updated clients reuse the existing local identity from https://grmcp.ibl.ro during the hostname migration, preserving credentials and account/report ownership. Explicit endpoint overrides remain supported; see the installation guide for migration and state-conflict recovery. No manual provider API key is required. Setup performs no data query; data calls use the configured allowance and provider credits.
 
 Request independent tasks in parallel. The hosted service applies shared and per-installation limits and may briefly queue a call. Clients sharing an installation share its limits; the operator controls slots centrally. Keep pending job or report IDs and retrieve existing results. Cancelling a call does not guarantee that submitted work stopped. Completed-result reuse remains seven days by default.
 

@@ -1,3 +1,4 @@
+import { BALANCE_TOOL } from '../src/balance-contract.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
@@ -24,6 +25,7 @@ test('WHOIS failure credits stay authoritative and reconciliation remains server
 test('the fixed product advertises its audience tools, validates hosted schemas and forwards forceLive', async t => {
   const calls: object[] = [];
   const stub = {
+    async getBalance() { return { quota: { unit: 'mcp_admission_units', windows: { hour: { remaining: 19 } } }, providerCredits: { balance: null, status: 'unavailable' } }; },
     async search(input: object) { calls.push(input); return { kind: 'search', status: 'ready', results: [] }; },
     async fetchPage(input: object) { calls.push(input); return { kind: 'page', status: 'ready', content: 'Fixture page' }; },
     async getSearchResult() { return { kind: isSeo ? 'search' : 'page', status: 'pending', jobId: 'fixture-1' }; },
@@ -35,10 +37,11 @@ test('the fixed product advertises its audience tools, validates hosted schemas 
   try {
     const catalog = await client.listTools();
     const names = catalog.tools.map(tool => tool.name).sort();
-    assert.deepEqual(names, isSeo ? ['get_serp_result', 'search_serps', ...SEO_TOOL_NAMES, WHOIS_TOOL].sort() : ['fetch_page', 'get_fetch_result']);
+    assert.deepEqual(names, isSeo ? ['get_serp_result', 'search_serps', ...SEO_TOOL_NAMES, WHOIS_TOOL, BALANCE_TOOL].sort() : ['fetch_page', 'get_fetch_result', BALANCE_TOOL].sort());
     const remote = new RemoteService({}, CLIENT_PROFILE);
     (remote as unknown as { connection: Promise<Client> }).connection = Promise.resolve(client);
     await remote.initialize();
+    assert.equal(((await remote.getBalance()) as { quota: { windows: { hour: { remaining: number } } } }).quota.windows.hour.remaining, 19);
     assert.equal(calls.length, 0, 'Setup checks exact schemas without creating data jobs.');
     const result = await client.callTool({ name: isSeo ? 'search_serps' : 'fetch_page', arguments: { ...(isSeo ? { query: 'fixture' } : { url: 'https://example.com/' }), forceLive: true } });
     assert.notEqual(result.isError, true);

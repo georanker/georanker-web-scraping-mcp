@@ -7,13 +7,22 @@
   "repository": "https://github.com/georanker/georanker-web-scraping-mcp",
   "tools": [
     "fetch_page",
-    "get_fetch_result"
+    "get_fetch_result",
+    "get_balance"
   ],
+  "balance": {
+    "tool": "get_balance",
+    "catalogHeader": {
+      "X-GeoRanker-Balance-Tools": "balance-v1"
+    },
+    "responseField": "balance",
+    "providerCredits": "last-reported-only"
+  },
   "transport": "stdio",
   "hostedPath": "/scraping/mcp",
   "defaultCacheSeconds": 604800,
   "forceLiveParameter": "forceLive",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "status": "public-client",
   "license": "MIT",
   "distribution": {

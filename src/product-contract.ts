@@ -1,7 +1,7 @@
 /** Public MCP product identities and input contracts. No provider configuration belongs here. */
 import type { SeoToolName } from './seo-contract.js';
 import type { WhoisInput } from './whois-contract.js';
-export const SERVER_VERSION = '0.15.0';
+export const SERVER_VERSION = '0.16.0';
 
 export type ProductProfile = 'combined' | 'seo' | 'scraping';
 export type JobKind = 'search' | 'page';
@@ -64,6 +64,7 @@ export interface FetchPageInput {
 }
 
 export interface SearchServiceLike {
+  getBalance?(signal?: AbortSignal): Promise<object>;
   getWhois?(input: WhoisInput, signal?: AbortSignal): Promise<object>;
   seoReport?(name: SeoToolName, input: Record<string, unknown>, signal?: AbortSignal): Promise<object>;
   search(input: SearchInput, signal?: AbortSignal): Promise<object>;

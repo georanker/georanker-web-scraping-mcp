@@ -10,6 +10,7 @@ export { deviceFingerprint } from './identity.js';
 import { PRODUCT_PROFILES, SERVER_VERSION, type ProductProfile, type SearchServiceLike, type SearchInput, type SearchResultInput, type FetchPageInput } from './product-contract.js';
 import { SEO_REPORT_CATALOG, SEO_REPORT_HEADER, SEO_TOOL_NAMES, type SeoToolName } from './seo-contract.js';
 import { WHOIS_TOOL, WHOIS_HEADER, WHOIS_CATALOG, type WhoisInput } from './whois-contract.js';
+import { BALANCE_TOOL, BALANCE_HEADER, BALANCE_CATALOG } from './balance-contract.js';
 import { createServer } from './server.js';
 
 export const PILOT_MCP_URL = 'https://mcp.georanker.com/mcp';
@@ -157,6 +158,7 @@ export class RemoteService implements SearchServiceLike {
       const client = new Client({ name: `${PRODUCT_PROFILES[this.profile].name}-bridge`, version: SERVER_VERSION });
       this.connection = (async () => {
         this.headers ??= await installationHeaders(this.url, this.env);
+        this.headers[BALANCE_HEADER] = BALANCE_CATALOG;
         if (this.profile === 'seo') this.headers[SEO_REPORT_HEADER] = SEO_REPORT_CATALOG;
         if (this.profile !== 'scraping') this.headers[WHOIS_HEADER] = WHOIS_CATALOG;
         // JSON-RPC IDs are unique only inside this transport. The namespace
@@ -180,7 +182,7 @@ export class RemoteService implements SearchServiceLike {
   async initialize(): Promise<void> {
     const listed = await (await this.connect()).listTools();
     const product = PRODUCT_PROFILES[this.profile];
-    const required = [product.resultTool, ...('searchTool' in product ? [product.searchTool] : []), ...('fetchTool' in product ? [product.fetchTool] : []), ...(this.profile === 'seo' ? SEO_TOOL_NAMES : []), ...(this.profile !== 'scraping' ? [WHOIS_TOOL] : [])].sort();
+    const required = [BALANCE_TOOL, product.resultTool, ...('searchTool' in product ? [product.searchTool] : []), ...('fetchTool' in product ? [product.fetchTool] : []), ...(this.profile === 'seo' ? SEO_TOOL_NAMES : []), ...(this.profile !== 'scraping' ? [WHOIS_TOOL] : [])].sort();
     const available = listed.tools.map(tool => tool.name).sort();
     if (required.length !== available.length || required.some((name, index) => name !== available[index])) {
       throw new AppError('REMOTE_PROFILE_MISMATCH', `The hosted endpoint does not provide the expected tools for ${product.title}. Check GEORANKER_MCP_URL and the server deployment. No query was submitted.`, undefined, { submissionUncertain: false, automaticRetryPerformed: false });
@@ -216,6 +218,9 @@ export class RemoteService implements SearchServiceLike {
       if (refusal) throw requestError(refusal, name, input, this.profile);
       throw requestError(new AppError('REMOTE_REQUEST_FAILED', 'The hosted MCP request did not complete. No automatic tool retry was performed.'), name, input, this.profile);
     }
+  }
+  getBalance(signal?: AbortSignal): Promise<object> {
+    return this.call(BALANCE_TOOL, {}, signal);
   }
   getWhois(input: WhoisInput, signal?: AbortSignal): Promise<object> {
     if (this.profile === 'scraping') return Promise.reject(new AppError('PROFILE_TOOL_UNAVAILABLE', 'WHOIS requires the SEO or combined MCP profile.'));

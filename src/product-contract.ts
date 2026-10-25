@@ -1,7 +1,8 @@
 /** Public MCP product identities and input contracts. No provider configuration belongs here. */
 import type { SeoToolName } from './seo-contract.js';
 import type { WhoisInput } from './whois-contract.js';
-export const SERVER_VERSION = '0.16.0';
+import type { ContentOptions, ResourceType } from './content-contract.js';
+export const SERVER_VERSION = '0.17.0';
 
 export type ProductProfile = 'combined' | 'seo' | 'scraping';
 export type JobKind = 'search' | 'page';
@@ -47,7 +48,7 @@ export interface SearchInput {
   forceLive?: boolean;
 }
 
-export interface SearchResultInput {
+export interface SearchResultInput extends ContentOptions {
   jobId: string;
   waitMs?: number;
   limit?: number;
@@ -56,14 +57,16 @@ export interface SearchResultInput {
   expectedKind?: JobKind;
 }
 
-export interface FetchPageInput {
+export interface FetchPageInput extends ContentOptions {
   url: string;
+  resourceType?: ResourceType;
   format?: 'text' | 'html';
   waitMs?: number;
   forceLive?: boolean;
 }
 
 export interface SearchServiceLike {
+  getDownload?(input: { jobId: string; format?: 'text' | 'html' }, signal?: AbortSignal): Promise<{ path: string; bytes: number; sha256: string; contentType: string; filename: string }>;
   getBalance?(signal?: AbortSignal): Promise<object>;
   getWhois?(input: WhoisInput, signal?: AbortSignal): Promise<object>;
   seoReport?(name: SeoToolName, input: Record<string, unknown>, signal?: AbortSignal): Promise<object>;

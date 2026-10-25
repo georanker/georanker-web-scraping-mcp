@@ -11,6 +11,7 @@ import { PRODUCT_PROFILES, SERVER_VERSION, type ProductProfile, type SearchServi
 import { SEO_REPORT_CATALOG, SEO_REPORT_HEADER, SEO_TOOL_NAMES, type SeoToolName } from './seo-contract.js';
 import { WHOIS_TOOL, WHOIS_HEADER, WHOIS_CATALOG, type WhoisInput } from './whois-contract.js';
 import { BALANCE_TOOL, BALANCE_HEADER, BALANCE_CATALOG } from './balance-contract.js';
+import { CONTENT_HEADER, CONTENT_CATALOG } from './content-contract.js';
 import { createServer } from './server.js';
 
 export const PILOT_MCP_URL = 'https://mcp.georanker.com/mcp';
@@ -159,6 +160,7 @@ export class RemoteService implements SearchServiceLike {
       this.connection = (async () => {
         this.headers ??= await installationHeaders(this.url, this.env);
         this.headers[BALANCE_HEADER] = BALANCE_CATALOG;
+        if (this.profile !== 'seo') this.headers[CONTENT_HEADER] = CONTENT_CATALOG;
         if (this.profile === 'seo') this.headers[SEO_REPORT_HEADER] = SEO_REPORT_CATALOG;
         if (this.profile !== 'scraping') this.headers[WHOIS_HEADER] = WHOIS_CATALOG;
         // JSON-RPC IDs are unique only inside this transport. The namespace

@@ -72,3 +72,18 @@ test('operator and direct-API CLI modes are unavailable', () => {
     assert.equal(result.stdout, '');
   }
 });
+
+
+test('optional scraping controls are advertised and forwarded only when explicitly supplied', {skip:isSeo}, async()=>{
+  const calls:object[]=[];
+  const server=createServer({async search(){return {};},async fetchPage(input){calls.push(input);return {kind:'page',status:'ready',content:'source'};},async getSearchResult(input){calls.push(input);return {kind:'page',status:'ready',content:'chunk'};}},CLIENT_PROFILE);
+  const client=new Client({name:'optional-content-fixture',version:'1'}),[host,service]=InMemoryTransport.createLinkedPair();
+  await Promise.all([client.connect(host),server.connect(service)]);
+  try {
+    const remote=new RemoteService({},CLIENT_PROFILE);(remote as unknown as {connection:Promise<Client>}).connection=Promise.resolve(client);await remote.initialize();
+    await remote.fetchPage({url:'https://example.com/a.css',resourceType:'css',fullContent:true,maxBytes:100000,download:true});
+    assert.deepEqual(calls[0],{url:'https://example.com/a.css',format:'text',forceLive:false,resourceType:'css',fullContent:true,maxBytes:100000,download:true});
+    await remote.getSearchResult({jobId:'existing_job',cursor:'opaque-cursor',maxBytes:50000});
+    assert.deepEqual(calls[1],{jobId:'existing_job',cursor:'opaque-cursor',maxBytes:50000,expectedKind:'page'});
+  } finally {await client.close();await server.close();}
+});

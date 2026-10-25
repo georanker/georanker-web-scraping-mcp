@@ -7,6 +7,7 @@ import { PRODUCT_PROFILES, SERVER_VERSION, type ProductProfile, type SearchServi
 import { SEO_INPUT_SCHEMAS, SEO_TOOL_DESCRIPTIONS, SEO_TOOL_NAMES } from './seo-contract.js';
 import { WHOIS_TOOL, WHOIS_INPUT_SCHEMA } from './whois-contract.js';
 import { BALANCE_TOOL, BALANCE_GUIDANCE } from './balance-contract.js';
+import { MAX_CHUNK_BYTES } from './content-contract.js';
 export { SERVER_VERSION } from './product-contract.js';
 export type { SearchInput, SearchResultInput, FetchPageInput, SearchServiceLike } from './product-contract.js';
 
@@ -61,8 +62,14 @@ const limit = z.number().int().min(1).max(MAX_SEARCH_RESULTS).optional();
 const forceLive = z.boolean().default(false)
   .describe('Bypass completed cached results to request current data. Default false. A new job can consume API credits. Existing pending or uncertain work is reused instead of creating a duplicate.');
 
-export function createServer(service: SearchServiceLike, profile: ProductProfile = 'combined', options: { seoReports?: boolean; whois?: boolean; balance?: boolean } = {}): McpServer {
+export function createServer(service: SearchServiceLike, profile: ProductProfile = 'combined', options: { seoReports?: boolean; whois?: boolean; balance?: boolean; content?: boolean } = {}): McpServer {
   const product = PRODUCT_PROFILES[profile];
+  const contentOptions: z.ZodRawShape = options.content === false ? {} : {
+    fullContent: z.boolean().optional().describe('Opt in to complete saved-content retrieval in bounded chunks. Default false; ordinary requests keep their existing limits. This does not download linked assets.'),
+    cursor: z.string().min(1).max(2048).optional().describe('The nextCursor from an earlier chunk of this exact job. Use result retrieval, not a new fetch, for subsequent chunks.'),
+    maxBytes: z.number().int().min(1024).max(MAX_CHUNK_BYTES).optional().describe('UTF-8 bytes per chunk, default 50000. Requires fullContent: true or a cursor.'),
+    download: z.boolean().optional().describe('Explicitly prepare a complete authenticated file download. Default false. Does not download linked CSS or JavaScript.'),
+  };
   const server = new McpServer({
     name: product.name,
     ...(profile === 'combined' ? {} : { title: product.title }),
@@ -122,6 +129,9 @@ export function createServer(service: SearchServiceLike, profile: ProductProfile
         .describe('Return page text or HTML. Text is the default.'),
       waitMs,
       forceLive,
+      ...(options.content === false ? {} : { ...contentOptions,
+        resourceType: z.enum(['page', 'css', 'javascript']).optional().describe('Default page. Explicit css/javascript fetches that one public HTTPS asset URL as raw UTF-8 source, without executing it. Each fresh asset spends normal MCP query allowance; no linked files are fetched automatically.'),
+      }),
     },
     annotations: {
       readOnlyHint: true,
@@ -143,6 +153,7 @@ export function createServer(service: SearchServiceLike, profile: ProductProfile
       jobId: z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/)
         .describe(`The job ID returned by ${profile === 'seo' ? 'search_serps' : profile === 'scraping' ? 'fetch_page' : 'search or fetch_page'}.`),
       ...(profile === 'seo' ? {} : { format: z.enum(['text', 'html']).optional().describe('Preserve or override the format returned by fetch_page. Shared page jobs can be retrieved in either format.') }),
+      ...(profile === 'seo' ? {} : contentOptions),
       waitMs,
       ...(profile === 'scraping' ? {} : { limit: limit.describe('Maximum organic results to return, 1–100. Defaults to all available results up to 100. Retrieves only the existing job; cannot increase its original search depth.') }),
     },

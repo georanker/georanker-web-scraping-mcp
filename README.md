@@ -2,7 +2,7 @@
 
 Public web page content as readable text or HTML for AI agents, powered by GeoRanker.
 
-Client version 0.16.0. The client is MIT-licensed. npm is the primary installation route for released versions; GitHub source installation is the fallback. If the requested npm version is not yet available, use the source instructions below. The hosted service is managed separately by GeoRanker.
+Client version 0.17.0. The client is MIT-licensed. npm is the primary installation route for released versions; GitHub source installation is the fallback. If the requested npm version is not yet available, use the source instructions below. The hosted service is managed separately by GeoRanker.
 
 **Install once, receive updates automatically**
 
@@ -20,7 +20,7 @@ Each push to the public main branch runs the release workflow. After tests and c
 
 Use get_balance to check remaining MCP allowance and last reported linked-account provider credits. Query responses include balance; report it with results without a redundant check. Missing or stale provider balances are labeled explicitly. See [balance and quota](docs/balance.md).
 
-Completed MCP results are eligible for reuse for seven days by default. Pass forceLive: true to bypass completed cache and request fresh upstream work. Pending work can be reused safely; retrieve the returned job ID instead of creating another request. Results disclose cache metadata and provider generation time when supplied.  See [examples and limits](docs/examples.md).
+Completed MCP results are eligible for reuse for seven days by default. Pass forceLive: true to bypass completed cache and request fresh upstream work. Pending work can be reused safely; retrieve the returned job ID instead of creating another request. Results disclose cache metadata and provider generation time when supplied.  See [examples and limits](docs/examples.md). Use the [optional content guide](docs/content.md) for chunked reads, explicit CSS/JS source requests and authenticated downloads. These features are disabled unless requested.
 
 The client enrolls automatically and stores its own installation credentials. Both GeoRanker products share their installation/account relationship. The default hosted origin is https://mcp.georanker.com. Updated clients reuse the existing local identity from https://grmcp.ibl.ro during the hostname migration, preserving credentials and account/report ownership. Explicit endpoint overrides remain supported; see the installation guide for migration and state-conflict recovery. No manual provider API key is required. Setup performs no data query; data calls use the configured allowance and provider credits.
 

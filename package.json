@@ -1,6 +1,6 @@
 {
   "name": "@georanker/web-scraping-mcp",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "private": false,
   "license": "MIT",
   "publishConfig": {
@@ -28,7 +28,8 @@
     "docs/install.md",
     "docs/privacy.md",
     "docs/examples.md",
-    "docs/balance.md"
+    "docs/balance.md",
+    "docs/content.md"
   ],
   "scripts": {
     "build": "tsc",

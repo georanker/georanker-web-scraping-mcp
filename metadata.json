@@ -20,9 +20,27 @@
   },
   "transport": "stdio",
   "hostedPath": "/scraping/mcp",
+  "catalogHeader": {
+    "X-GeoRanker-Content-Tools": "content-v1"
+  },
+  "optionalContent": {
+    "defaultEnabled": false,
+    "fullContentParameter": "fullContent",
+    "resourceTypeParameter": "resourceType",
+    "resourceTypes": [
+      "page",
+      "css",
+      "javascript"
+    ],
+    "downloadParameter": "download",
+    "defaultChunkBytes": 50000,
+    "maxChunkBytes": 100000,
+    "maxAssetBytes": 8388608,
+    "automaticLinkedDownloads": false
+  },
   "defaultCacheSeconds": 604800,
   "forceLiveParameter": "forceLive",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "status": "public-client",
   "license": "MIT",
   "distribution": {

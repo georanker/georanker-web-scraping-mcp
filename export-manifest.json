@@ -25,7 +25,7 @@
     "test/enrollment.test.ts": "d180eb852dc85e5fd30e32c9c4381ed646304bdf7efdfe7e2ca4288845d00a11",
     "scripts/check-package.mjs": "b193acba585e76467e57427b41c41bc207cdacbcf38a9792c9e2e92f84079837",
     ".github/workflows/client-release.yml": "2d98624534668cf7cc6395aae0f58c2a8550f4be0c0c09da99f55921b257fd32",
-    "scripts/prepare-release.mjs": "c92fb57bdfcd970d03626506572ea6b4b93efcb6fb7eae8a5f5085bcf456783d",
+    "scripts/prepare-release.mjs": "8328770500931a527ebe0d8be76c0fdbcb36619cb1226e7e0e0851314b647986",
     "scripts/prepare-npm.mjs": "594538af2d33bb9abaabeafc557336bafbc286023fed23c4df39fcae737f5afa",
     "LICENSE": "aaf0a48e35e07bdeb5a5c87f9dd3f3c19215c9b61873d3238e0b14ac723b76b5",
     "tsconfig.json": "6da40f4de3a0cbd1221e722b0469c9017108766e00ccf45fbf54bc4a9f28c329",
